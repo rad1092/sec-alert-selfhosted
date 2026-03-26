@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <h2>Recent Alerts</h2>
+  {% if alerts %}
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Status</th>
+        <th>Headline</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for alert in alerts %}
+      <tr>
+        <td>{{ alert.id }}</td>
+        <td>{{ alert.status }}</td>
+        <td>{{ alert.headline or "-" }}</td>
+        <td>{{ alert.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No alerts yet.</p>
+  {% endif %}
+</section>
+{% endblock %}
+

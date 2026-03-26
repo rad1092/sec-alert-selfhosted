@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid two-up">
+  <article class="card">
+    <h2>Runtime Settings</h2>
+    <dl class="stack">
+      {% for key, value in settings_map.items() %}
+      <div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>
+      {% endfor %}
+    </dl>
+  </article>
+
+  <article class="card">
+    <h2>Runtime State</h2>
+    <dl class="stack">
+      <div><dt>Backlog</dt><dd>{{ broker_snapshot.backlog_size }}</dd></div>
+      <div><dt>Oldest queued age</dt><dd>{{ broker_snapshot.oldest_queued_age_seconds }}s</dd></div>
+      <div><dt>Recent 403</dt><dd>{{ broker_snapshot.recent_403_count }}</dd></div>
+      <div><dt>Recent 429</dt><dd>{{ broker_snapshot.recent_429_count }}</dd></div>
+      <div><dt>Scheduler enabled</dt><dd>{{ scheduler_snapshot.enabled }}</dd></div>
+      <div><dt>Scheduler started</dt><dd>{{ scheduler_snapshot.started }}</dd></div>
+    </dl>
+  </article>
+</section>
+{% endblock %}
+

@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      APP_HOST: 127.0.0.1
+      APP_PORT: 8000
+      SCHEDULER_ENABLED: "true"
+    network_mode: host
+    volumes:
+      - ./:/app
+      - ./data:/app/data
+    command: uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+

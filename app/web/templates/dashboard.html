@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid">
+  <article class="card">
+    <h2>Watchlist</h2>
+    <p class="metric">{{ watchlist_count }}</p>
+  </article>
+  <article class="card">
+    <h2>Alerts</h2>
+    <p class="metric">{{ alerts_count }}</p>
+  </article>
+  <article class="card">
+    <h2>Errors</h2>
+    <p class="metric">{{ errors_count }}</p>
+  </article>
+  <article class="card">
+    <h2>Destinations</h2>
+    <p class="metric">{{ destinations_count }}</p>
+  </article>
+</section>
+
+<section class="grid two-up">
+  <article class="card">
+    <h2>Broker Snapshot</h2>
+    <dl class="stack">
+      <div><dt>Backlog</dt><dd>{{ broker_snapshot.backlog_size }}</dd></div>
+      <div><dt>Oldest queued age</dt><dd>{{ broker_snapshot.oldest_queued_age_seconds }}s</dd></div>
+      <div><dt>P1 jobs</dt><dd>{{ broker_snapshot.queued_by_priority.P1 }}</dd></div>
+      <div><dt>P2 jobs</dt><dd>{{ broker_snapshot.queued_by_priority.P2 }}</dd></div>
+      <div><dt>P3 jobs</dt><dd>{{ broker_snapshot.queued_by_priority.P3 }}</dd></div>
+      <div><dt>Recent 403</dt><dd>{{ broker_snapshot.recent_403_count }}</dd></div>
+      <div><dt>Recent 429</dt><dd>{{ broker_snapshot.recent_429_count }}</dd></div>
+    </dl>
+  </article>
+
+  <article class="card">
+    <h2>Scheduler Snapshot</h2>
+    <dl class="stack">
+      <div><dt>Enabled</dt><dd>{{ scheduler_snapshot.enabled }}</dd></div>
+      <div><dt>Started</dt><dd>{{ scheduler_snapshot.started }}</dd></div>
+      <div><dt>Last heartbeat</dt><dd>{{ scheduler_snapshot.last_heartbeat_at or "Not yet" }}</dd></div>
+    </dl>
+  </article>
+</section>
+{% endblock %}
+

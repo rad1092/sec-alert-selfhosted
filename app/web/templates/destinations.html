@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid two-up">
+  <article class="card">
+    <h2>Slack Destination</h2>
+    <form method="post" action="/destinations" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>
+        Name
+        <input type="text" name="name" value="Primary Slack" required>
+      </label>
+      <label>
+        Notes
+        <textarea name="notes" rows="3"></textarea>
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" name="enabled" checked>
+        Enabled
+      </label>
+      <button type="submit">Save Slack Metadata</button>
+    </form>
+    <form method="post" action="/destinations/slack/test" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">Send Slack Test</button>
+    </form>
+    <p class="muted">
+      Slack webhook URL is {{ "configured" if slack_configured else "not configured" }}.
+    </p>
+  </article>
+
+  <article class="card">
+    <h2>Configured Destinations</h2>
+    {% if destinations %}
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Enabled</th>
+          <th>Config</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for destination in destinations %}
+        <tr>
+          <td>{{ destination.name }}</td>
+          <td>{{ destination.destination_type }}</td>
+          <td>{{ destination.enabled }}</td>
+          <td>{{ destination.config_label or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>No destinations saved yet.</p>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}
+

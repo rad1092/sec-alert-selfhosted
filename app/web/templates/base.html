@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title }} · SEC Alert</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+  </head>
+  <body>
+    <header class="site-header">
+      <div>
+        <p class="eyebrow">SEC Alert Self-Hosted</p>
+        <h1>{{ page_title }}</h1>
+      </div>
+      <nav class="site-nav">
+        <a href="/">Dashboard</a>
+        <a href="/watchlist">Watchlist</a>
+        <a href="/destinations">Destinations</a>
+        <a href="/alerts">Alerts</a>
+        <a href="/errors">Errors</a>
+        <a href="/settings">Settings</a>
+      </nav>
+    </header>
+
+    <main class="page">
+      <section class="banner">
+        <strong>Near-real-time:</strong>
+        SEC filings usually appear within a few minutes, but visibility can lag under load.
+      </section>
+
+      {% for flash in flash_messages %}
+      <section class="flash flash-{{ flash.level }}">{{ flash.message }}</section>
+      {% endfor %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

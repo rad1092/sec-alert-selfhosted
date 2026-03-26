@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <h2>Recent Errors</h2>
+  {% if errors %}
+  <table>
+    <thead>
+      <tr>
+        <th>Stage</th>
+        <th>Source</th>
+        <th>Error</th>
+        <th>Retryable</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for error in errors %}
+      <tr>
+        <td>{{ error.stage }}</td>
+        <td>{{ error.source_name or "-" }}</td>
+        <td>{{ error.message }}</td>
+        <td>{{ error.is_retryable }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No errors recorded.</p>
+  {% endif %}
+</section>
+{% endblock %}
+

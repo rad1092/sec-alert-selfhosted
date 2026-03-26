@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+import uuid
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
+
+from app.config import Settings, get_settings
+from app.db import configure_database, dispose_database, init_database
+from app.logging import configure_logging, request_id_var
+from app.services.broker import SecRequestBroker
+from app.services.locks import SingletonProcessLock
+from app.services.notify.slack import SlackNotifier
+from app.services.scheduler import SchedulerService
+from app.web.routes_dashboard import router as dashboard_router
+from app.web.routes_destinations import router as destinations_router
+from app.web.routes_settings import router as settings_router
+from app.web.routes_watchlist import router as watchlist_router
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    resolved_settings = settings or get_settings()
+    configure_logging(resolved_settings)
+    resolved_settings.ensure_runtime_paths()
+    configure_database(resolved_settings.database_url)
+
+    process_lock = SingletonProcessLock(Path(resolved_settings.data_dir) / "app.lock")
+    broker = SecRequestBroker(rate_limit_rps=resolved_settings.sec_rate_limit_rps)
+    scheduler = SchedulerService(resolved_settings, broker)
+    slack_notifier = SlackNotifier(resolved_settings)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        process_lock.acquire()
+        init_database()
+        app.state.settings = resolved_settings
+        app.state.broker = broker
+        app.state.scheduler = scheduler
+        app.state.process_lock = process_lock
+        app.state.slack_notifier = slack_notifier
+        scheduler.start()
+        try:
+            yield
+        finally:
+            scheduler.shutdown()
+            process_lock.release()
+            dispose_database()
+
+    app = FastAPI(title=resolved_settings.app_name, lifespan=lifespan)
+    app.add_middleware(SessionMiddleware, secret_key=resolved_settings.session_secret)
+    app.mount(
+        "/static",
+        StaticFiles(directory=str(Path(__file__).parent / "web" / "static")),
+        name="static",
+    )
+
+    @app.middleware("http")
+    async def add_request_id(request: Request, call_next):
+        request_id = str(uuid.uuid4())
+        token = request_id_var.set(request_id)
+        try:
+            response = await call_next(request)
+        finally:
+            request_id_var.reset(token)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+    @app.get("/healthz")
+    def healthz():
+        return JSONResponse({"status": "ok"})
+
+    app.include_router(dashboard_router)
+    app.include_router(watchlist_router)
+    app.include_router(destinations_router)
+    app.include_router(settings_router)
+
+    return app
+
+
+app = create_app()
