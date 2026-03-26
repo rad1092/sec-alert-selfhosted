@@ -1,0 +1,376 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from app.config import Settings
+from app.db import open_session
+from app.main import create_app
+from app.models import Alert, DeliveryAttempt, Destination, Filing, StageError, WatchlistEntry
+from app.services.scoring.form4 import Form4Scorer
+from app.services.sec.client import FixtureSecClient
+from app.services.sec.form4 import Form4Parser
+from app.services.sec.latest_ownership import LATEST_OWNERSHIP_URL, parse_ownership_candidates
+from app.services.sec.resolver import COMPANY_TICKERS_URL
+from tests.conftest import extract_csrf_token
+
+FIXTURES = Path(__file__).parent / "fixtures" / "sec"
+FORM4_FIXTURES = FIXTURES / "form4"
+
+BUY_DETAIL_URL = (
+    "https://www.sec.gov/Archives/edgar/data/320193/"
+    "000032019326000200/0000320193-26-000200-index.html"
+)
+BUY_XML_URL = (
+    "https://www.sec.gov/Archives/edgar/data/320193/000032019326000200/form4-multi-buy.xml"
+)
+
+
+def load_text(*parts: str) -> str:
+    return FIXTURES.joinpath(*parts).read_text(encoding="utf-8")
+
+
+def load_json(*parts: str) -> dict:
+    return json.loads(load_text(*parts))
+
+
+class FakeSlackNotifier:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.sent_payloads: list[dict] = []
+
+    def is_configured(self) -> bool:
+        return True
+
+    def send_test_message(self, destination_name: str):
+        return self.send_alert(destination_name=destination_name, payload={"headline": "test"})
+
+    def send_alert(self, destination_name: str, payload: dict):
+        self.sent_payloads.append({"destination_name": destination_name, "payload": payload})
+        if self.fail:
+            from app.services.notify.base import NotificationResult
+
+            return NotificationResult(status="failed", detail="Synthetic Slack failure.")
+        from app.services.notify.base import NotificationResult
+
+        return NotificationResult(
+            status="sent",
+            detail="Synthetic Slack success.",
+            response_code=200,
+        )
+
+
+def make_settings(tmp_path: Path) -> Settings:
+    return Settings(
+        APP_HOST="127.0.0.1",
+        APP_PORT=8000,
+        DATA_DIR=tmp_path,
+        DATABASE_URL=f"sqlite:///{(tmp_path / 'phase3.db').as_posix()}",
+        SEC_USER_AGENT="SEC Alert Test test@example.com",
+        SEC_POLL_INTERVAL_SECONDS=60,
+        SEC_RATE_LIMIT_RPS=10,
+        SCHEDULER_ENABLED=False,
+        TESTING=True,
+    )
+
+
+def make_fixture_client(feed_case: str = "buy_multi_reporter") -> FixtureSecClient:
+    text_map = {
+        LATEST_OWNERSHIP_URL: load_text("form4", feed_case, "ownership-feed.xml"),
+    }
+    for case in (
+        "buy_multi_reporter",
+        "sale_simple",
+        "mixed_m_f",
+        "derivative_heavy",
+        "tenb5_1_case",
+    ):
+        case_dir = FORM4_FIXTURES / case
+        detail_url = _detail_url_for_case(case)
+        xml_url = _xml_url_for_case(case)
+        text_map[detail_url] = (case_dir / "detail-index.html").read_text(encoding="utf-8")
+        text_map[xml_url] = (case_dir / "ownership.xml").read_text(encoding="utf-8")
+
+    return FixtureSecClient(
+        json_map={COMPANY_TICKERS_URL: load_json("company_tickers.json")},
+        text_map=text_map,
+    )
+
+
+def create_phase3_client(
+    tmp_path: Path,
+    *,
+    fail_slack: bool = False,
+    feed_case: str = "buy_multi_reporter",
+):
+    settings = make_settings(tmp_path)
+    fixture_sec_client = make_fixture_client(feed_case=feed_case)
+    fake_slack = FakeSlackNotifier(fail=fail_slack)
+    app = create_app(
+        settings,
+        service_overrides={
+            "sec_client": fixture_sec_client,
+            "slack_notifier": fake_slack,
+        },
+    )
+    return TestClient(app), fake_slack, fixture_sec_client
+
+
+def seed_watchlist_and_destination() -> None:
+    with open_session() as session:
+        session.add(
+            Destination(
+                name="Primary Slack",
+                destination_type="slack",
+                enabled=True,
+                config_label="env:SLACK_WEBHOOK_URL",
+            )
+        )
+        session.add(WatchlistEntry(ticker="AAPL", enabled=True))
+        session.commit()
+
+
+def test_ownership_feed_parser_recognizes_form4_candidates():
+    candidates = parse_ownership_candidates(
+        load_text("form4", "buy_multi_reporter", "ownership-feed.xml")
+    )
+    assert [candidate.form_type for candidate in candidates] == ["4", "5", "3"]
+    assert candidates[0].accession_number == "0000320193-26-000200"
+
+
+def test_form4_parser_and_scorer_cover_multi_reporter_sale_and_neutral_cases():
+    parser = Form4Parser()
+    scorer = Form4Scorer()
+
+    buy = parser.parse(
+        load_text("form4", "buy_multi_reporter", "detail-index.html"),
+        load_text("form4", "buy_multi_reporter", "ownership.xml"),
+    )
+    buy_score = scorer.score(buy)
+    assert buy.issuer_cik == "0000320193"
+    assert buy.normalized_payload["owner_count"] == 2
+    assert buy.normalized_payload["multi_reporting_owner"] is True
+    assert buy.normalized_payload["reporting_owners"][0]["name"] == "Alex Buyer"
+    assert buy.normalized_payload["reporting_owners"][1]["name"] == "Jordan Buyer"
+    assert len(buy.normalized_payload["non_derivative_transactions"]) == 1
+    assert buy_score.score == 1.0
+    assert any("Multiple reporting owners aligned" in reason for reason in buy_score.reasons)
+
+    sale = parser.parse(
+        load_text("form4", "sale_simple", "detail-index.html"),
+        load_text("form4", "sale_simple", "ownership.xml"),
+    )
+    sale_score = scorer.score(sale)
+    assert sale_score.score == -1.0
+    assert sale_score.confidence == "high"
+
+    mixed = parser.parse(
+        load_text("form4", "mixed_m_f", "detail-index.html"),
+        load_text("form4", "mixed_m_f", "ownership.xml"),
+    )
+    mixed_score = scorer.score(mixed)
+    assert mixed_score.score == 0.0
+    assert mixed_score.confidence == "low"
+
+
+def test_form4_parser_handles_derivative_heavy_and_tenb5_one_cases():
+    parser = Form4Parser()
+    scorer = Form4Scorer()
+
+    derivative = parser.parse(
+        load_text("form4", "derivative_heavy", "detail-index.html"),
+        load_text("form4", "derivative_heavy", "ownership.xml"),
+    )
+    assert derivative.normalized_payload["issuer"]["foreign_trading_symbol"] == "MSFTY"
+    assert derivative.normalized_payload["reporting_owners"][0]["non_us_address_flag"] is True
+    assert derivative.normalized_payload["derivative_transactions"][0]["unknown_elements"] == [
+        "customFutureField"
+    ]
+    assert len(derivative.normalized_payload["derivative_holdings"]) == 1
+
+    tenb5_one = parser.parse(
+        load_text("form4", "tenb5_1_case", "detail-index.html"),
+        load_text("form4", "tenb5_1_case", "ownership.xml"),
+    )
+    tenb5_score = scorer.score(tenb5_one)
+    assert tenb5_one.normalized_payload["tenb5_1"]["checkbox"] is True
+    assert tenb5_one.normalized_payload["tenb5_1"]["mentioned_in_remarks"] is True
+    assert tenb5_one.normalized_payload["tenb5_1"]["supporting_footnote_ids"] == ["F1"]
+    assert tenb5_one.normalized_payload["tenb5_1"]["adoption_date"] == "2026-01-15"
+    assert tenb5_score.score == -1.0
+    assert any("10b5-1" in reason for reason in tenb5_score.reasons)
+
+
+def test_form4_manual_ingest_end_to_end_and_idempotency(tmp_path: Path):
+    client, fake_slack, fixture_sec_client = create_phase3_client(tmp_path)
+    with client:
+        seed_watchlist_and_destination()
+
+        response = client.get("/")
+        csrf_token = extract_csrf_token(response.text)
+        run_response = client.post(
+            "/actions/ingest-form4-now",
+            data={"csrf_token": csrf_token},
+            follow_redirects=True,
+        )
+        assert run_response.status_code == 200
+        assert client.app.state.worker.wait_for_idle(timeout=5.0)
+
+        with open_session() as session:
+            filings = session.query(Filing).all()
+            alerts = session.query(Alert).all()
+            attempts = session.query(DeliveryAttempt).all()
+            watchlist = session.query(WatchlistEntry).one()
+
+            assert len(filings) == 1
+            assert len(alerts) == 1
+            assert len(attempts) == 1
+            filing = filings[0]
+            assert filing.form_type == "4"
+            assert filing.issuer_cik == "0000320193"
+            assert filing.reporter_names == ["Alex Buyer", "Jordan Buyer"]
+            assert filing.normalized_payload["owner_count"] == 2
+            assert filing.normalized_payload["multi_reporting_owner"] is True
+            assert len(filing.normalized_payload["non_derivative_transactions"]) == 1
+            assert filing.summary_headline is not None
+            assert filing.summary_context is not None
+            assert watchlist.issuer_cik == "0000320193"
+
+        response = client.get("/")
+        csrf_token = extract_csrf_token(response.text)
+        repeat_response = client.post(
+            "/actions/ingest-form4-now",
+            data={"csrf_token": csrf_token},
+            follow_redirects=True,
+        )
+        assert repeat_response.status_code == 200
+        assert client.app.state.worker.wait_for_idle(timeout=5.0)
+
+        with open_session() as session:
+            assert session.query(Filing).count() == 1
+            assert session.query(Alert).count() == 1
+            assert session.query(DeliveryAttempt).count() == 1
+
+        assert len(fake_slack.sent_payloads) == 1
+        assert LATEST_OWNERSHIP_URL in fixture_sec_client.calls
+        assert BUY_DETAIL_URL in fixture_sec_client.calls
+        assert BUY_XML_URL in fixture_sec_client.calls
+
+
+def test_form4_reparse_updates_existing_filing_without_new_alert_or_delivery(tmp_path: Path):
+    client, fake_slack, fixture_sec_client = create_phase3_client(tmp_path)
+    with client:
+        seed_watchlist_and_destination()
+
+        response = client.get("/")
+        csrf_token = extract_csrf_token(response.text)
+        client.post(
+            "/actions/ingest-form4-now",
+            data={"csrf_token": csrf_token},
+            follow_redirects=True,
+        )
+        assert client.app.state.worker.wait_for_idle(timeout=5.0)
+
+        fixture_sec_client.text_map[BUY_XML_URL] = load_text(
+            "form4", "buy_multi_reporter", "ownership.xml"
+        ).replace(
+            "Joint filing by more than one reporting person.",
+            "Joint filing by more than one reporting person. Rule 10b5-1 noted on 2026-02-01.",
+        )
+
+        with open_session() as session:
+            filing = session.query(Filing).one()
+            filing_id = filing.id
+
+        detail_response = client.get(f"/filings/{filing_id}")
+        detail_csrf = extract_csrf_token(detail_response.text)
+        reparse_response = client.post(
+            f"/filings/{filing_id}/reparse",
+            data={"csrf_token": detail_csrf},
+            follow_redirects=True,
+        )
+        assert reparse_response.status_code == 200
+        assert client.app.state.worker.wait_for_idle(timeout=5.0)
+
+        with open_session() as session:
+            filing = session.get(Filing, filing_id)
+            assert filing is not None
+            assert filing.normalized_payload["tenb5_1"]["mentioned_in_remarks"] is True
+            assert session.query(Alert).count() == 1
+            assert session.query(DeliveryAttempt).count() == 1
+
+        assert len(fake_slack.sent_payloads) == 1
+
+
+def test_form4_slack_failure_is_isolated_from_ingest(tmp_path: Path):
+    client, fake_slack, _fixture_sec_client = create_phase3_client(tmp_path, fail_slack=True)
+    with client:
+        seed_watchlist_and_destination()
+
+        response = client.get("/")
+        csrf_token = extract_csrf_token(response.text)
+        client.post(
+            "/actions/ingest-form4-now",
+            data={"csrf_token": csrf_token},
+            follow_redirects=True,
+        )
+        assert client.app.state.worker.wait_for_idle(timeout=5.0)
+
+        with open_session() as session:
+            filing = session.query(Filing).one()
+            alert = session.query(Alert).one()
+            attempts = session.query(DeliveryAttempt).all()
+            errors = session.query(StageError).all()
+
+            assert filing.summary_headline is not None
+            assert alert.status == "delivery_failed"
+            assert len(attempts) == 1
+            assert attempts[0].status == "failed"
+            assert any(error.stage == "slack_delivery" for error in errors)
+
+        assert len(fake_slack.sent_payloads) == 1
+
+
+def _detail_url_for_case(case: str) -> str:
+    if case == "buy_multi_reporter":
+        return BUY_DETAIL_URL
+    if case == "sale_simple":
+        return (
+            "https://www.sec.gov/Archives/edgar/data/320193/"
+            "000032019326000201/0000320193-26-000201-index.html"
+        )
+    if case == "mixed_m_f":
+        return (
+            "https://www.sec.gov/Archives/edgar/data/320193/"
+            "000032019326000202/0000320193-26-000202-index.html"
+        )
+    if case == "derivative_heavy":
+        return (
+            "https://www.sec.gov/Archives/edgar/data/789019/"
+            "000078901926000210/0000789019-26-000210-index.html"
+        )
+    return (
+        "https://www.sec.gov/Archives/edgar/data/320193/"
+        "000032019326000203/0000320193-26-000203-index.html"
+    )
+
+
+def _xml_url_for_case(case: str) -> str:
+    if case == "buy_multi_reporter":
+        return BUY_XML_URL
+    if case == "sale_simple":
+        return (
+            "https://www.sec.gov/Archives/edgar/data/320193/000032019326000201/aapl-form4-sale.xml"
+        )
+    if case == "mixed_m_f":
+        return (
+            "https://www.sec.gov/Archives/edgar/data/320193/000032019326000202/aapl-form4-mixed.xml"
+        )
+    if case == "derivative_heavy":
+        return (
+            "https://www.sec.gov/Archives/edgar/data/789019/"
+            "000078901926000210/msft-ownership-data.xml"
+        )
+    return "https://www.sec.gov/Archives/edgar/data/320193/000032019326000203/aapl-form4-10b5.xml"

@@ -4,7 +4,7 @@ Self-hosted SEC alert application with a localhost-first, BYOK posture.
 
 ## Current scope
 
-This repository currently implements `Phase 2: manual 8-K end-to-end`.
+This repository currently implements `Phase 3: manual 8-K + Form 4 end-to-end`.
 
 - FastAPI + Jinja2 app shell
 - SQLite models and startup validation
@@ -13,8 +13,11 @@ This repository currently implements `Phase 2: manual 8-K end-to-end`.
 - shared in-memory SEC request broker with queue metrics
 - watchlist CRUD
 - `company_tickers.json` resolver with manual CIK override precedence
-- manual broker-backed `Run Ingest Now` path for `8-K` / `8-K/A`
+- manual broker-backed `Run 8-K Ingest Now` path for `8-K` / `8-K/A`
+- manual broker-backed `Run Form 4 Ingest Now` path for `4` / `4/A`
 - deterministic 8-K parsing, scoring, summary generation, and Slack delivery
+- ownership-first Latest Filings/RSS discovery for Form 4 candidates
+- XML-first Form 4 parsing with deterministic scoring, summary generation, and Slack delivery
 - filing detail page with broker-backed reparse
 
 The product is **near-real-time**, not instant. SEC filings usually become visible within a few minutes, but SEC availability can lag longer under load. See the SEC [Webmaster FAQ](https://www.sec.gov/about/webmaster-frequently-asked-questions), [EDGAR APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces), and [Accessing EDGAR Data](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data).
@@ -52,7 +55,7 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
 5. Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
-6. Add a watchlist entry, configure a Slack destination, then use `Run Ingest Now` from the dashboard.
+6. Add a watchlist entry, configure a Slack destination, then use either `Run 8-K Ingest Now` or `Run Form 4 Ingest Now` from the dashboard.
 
 ## Development notes
 

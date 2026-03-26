@@ -26,11 +26,20 @@
     <h2>Parsed Payload</h2>
     {% if filing.normalized_payload %}
     <dl class="stack">
+      {% if filing.form_type in ["4", "4/A"] %}
+      <div><dt>Reporting owners</dt><dd>{{ filing.reporter_names | join(", ") if filing.reporter_names else "-" }}</dd></div>
+      <div><dt>Owner count</dt><dd>{{ filing.normalized_payload.owner_count or "-" }}</dd></div>
+      <div><dt>10b5-1</dt><dd>{{ filing.normalized_payload.tenb5_1.checkbox if filing.normalized_payload.tenb5_1 is defined else "-" }}</dd></div>
+      {% else %}
       <div><dt>Items</dt><dd>{{ filing.normalized_payload.item_numbers | join(", ") if filing.normalized_payload.item_numbers else "-" }}</dd></div>
       <div><dt>Exhibits</dt><dd>{{ filing.normalized_payload.exhibit_titles | join(", ") if filing.normalized_payload.exhibit_titles else "-" }}</dd></div>
+      {% endif %}
       <div><dt>Reasons</dt><dd>{{ filing.reasons | join("; ") if filing.reasons else "-" }}</dd></div>
     </dl>
+    {% if filing.form_type not in ["4", "4/A"] %}
     <p>{{ filing.normalized_payload.cleaned_body or "-" }}</p>
+    {% endif %}
+    <pre>{{ filing.normalized_payload | tojson(indent=2) }}</pre>
     {% else %}
     <p>No parsed payload stored yet.</p>
     {% endif %}

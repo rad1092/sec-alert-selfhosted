@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ownershipDocument>
+  <schemaVersion>X0508</schemaVersion>
+  <documentType>4</documentType>
+  <periodOfReport>2026-03-26</periodOfReport>
+  <issuer>
+    <issuerCik>0000789019</issuerCik>
+    <issuerName>Microsoft Corporation</issuerName>
+    <issuerTradingSymbol>MSFT</issuerTradingSymbol>
+    <issuerForeignTradingSymbol>MSFTY</issuerForeignTradingSymbol>
+  </issuer>
+  <reportingOwner>
+    <reportingOwnerId>
+      <rptOwnerCik>0005555555</rptOwnerCik>
+      <rptOwnerName>Global Option Holder</rptOwnerName>
+    </reportingOwnerId>
+    <reportingOwnerRelationship>
+      <isDirector>0</isDirector>
+      <isOfficer>0</isOfficer>
+      <isTenPercentOwner>1</isTenPercentOwner>
+      <isOther>0</isOther>
+    </reportingOwnerRelationship>
+    <rptOwnerNonUSAddressFlag>1</rptOwnerNonUSAddressFlag>
+    <rptOwnerNonUSStateTerritory>ON</rptOwnerNonUSStateTerritory>
+    <rptOwnerCountry>CA</rptOwnerCountry>
+  </reportingOwner>
+  <nonDerivativeTable>
+    <nonDerivativeHolding>
+      <securityTitle><value>Common Stock</value></securityTitle>
+      <postTransactionAmounts>
+        <sharesOwnedFollowingTransaction><value>1500</value></sharesOwnedFollowingTransaction>
+      </postTransactionAmounts>
+      <ownershipNature>
+        <directOrIndirectOwnership><value>I</value></directOrIndirectOwnership>
+        <natureOfOwnership><value>By family trust</value></natureOfOwnership>
+      </ownershipNature>
+    </nonDerivativeHolding>
+  </nonDerivativeTable>
+  <derivativeTable>
+    <derivativeTransaction>
+      <securityTitle><value>Stock Option</value></securityTitle>
+      <conversionOrExercisePrice><value>75.00</value></conversionOrExercisePrice>
+      <transactionDate><value>2026-03-26</value></transactionDate>
+      <transactionCoding>
+        <transactionFormType>4</transactionFormType>
+        <transactionCode>M</transactionCode>
+        <equitySwapInvolved>0</equitySwapInvolved>
+      </transactionCoding>
+      <transactionAmounts>
+        <transactionShares><value>500</value></transactionShares>
+        <transactionPricePerShare><value>0.00</value></transactionPricePerShare>
+        <transactionAcquiredDisposedCode><value>A</value></transactionAcquiredDisposedCode>
+      </transactionAmounts>
+      <exerciseDate><value>2026-03-26</value></exerciseDate>
+      <expirationDate><value>2030-03-26</value></expirationDate>
+      <underlyingSecurity>
+        <underlyingSecurityTitle><value>Common Stock</value></underlyingSecurityTitle>
+        <underlyingSecurityShares><value>500</value></underlyingSecurityShares>
+      </underlyingSecurity>
+      <postTransactionAmounts>
+        <sharesOwnedFollowingTransaction><value>500</value></sharesOwnedFollowingTransaction>
+      </postTransactionAmounts>
+      <ownershipNature>
+        <directOrIndirectOwnership><value>I</value></directOrIndirectOwnership>
+        <natureOfOwnership><value>By family trust</value></natureOfOwnership>
+      </ownershipNature>
+      <customFutureField>ignore me safely</customFutureField>
+    </derivativeTransaction>
+    <derivativeHolding>
+      <securityTitle><value>Performance Option</value></securityTitle>
+      <conversionOrExercisePrice><value>90.00</value></conversionOrExercisePrice>
+      <exerciseDate><value>2027-03-26</value></exerciseDate>
+      <expirationDate><value>2031-03-26</value></expirationDate>
+      <underlyingSecurity>
+        <underlyingSecurityTitle><value>Common Stock</value></underlyingSecurityTitle>
+        <underlyingSecurityShares><value>300</value></underlyingSecurityShares>
+      </underlyingSecurity>
+      <postTransactionAmounts>
+        <sharesOwnedFollowingTransaction><value>300</value></sharesOwnedFollowingTransaction>
+      </postTransactionAmounts>
+      <ownershipNature>
+        <directOrIndirectOwnership><value>I</value></directOrIndirectOwnership>
+        <natureOfOwnership><value>By family trust</value></natureOfOwnership>
+      </ownershipNature>
+    </derivativeHolding>
+  </derivativeTable>
+</ownershipDocument>

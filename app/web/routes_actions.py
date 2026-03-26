@@ -16,22 +16,53 @@ router = APIRouter(prefix="/actions", tags=["actions"])
 @router.post("/ingest-now")
 async def ingest_now(request: Request, session: Session = Depends(get_session)):
     await validate_csrf(request)
+    return _queue_ingest_run(
+        request=request,
+        session=session,
+        run_key="manual-8k-ingest",
+        task_name="manual-ingest-8k",
+        flash_label="8-K",
+        triggered_by="manual_8k",
+    )
+
+
+@router.post("/ingest-form4-now")
+async def ingest_form4_now(request: Request, session: Session = Depends(get_session)):
+    await validate_csrf(request)
+    return _queue_ingest_run(
+        request=request,
+        session=session,
+        run_key="manual-form4-ingest",
+        task_name="manual-ingest-form4",
+        flash_label="Form 4",
+        triggered_by="manual_form4",
+    )
+
+
+def _queue_ingest_run(
+    *,
+    request: Request,
+    session: Session,
+    run_key: str,
+    task_name: str,
+    flash_label: str,
+    triggered_by: str,
+):
     broker = request.app.state.broker
-    run_key = "manual-8k-ingest"
 
     if not broker.start_run(run_key):
-        flash(request, "warning", "An 8-K ingest run is already queued or running.")
+        flash(request, "warning", f"A {flash_label} ingest run is already queued or running.")
         return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
-    run = IngestRun(run_key="", triggered_by="manual", status="queued")
+    run = IngestRun(run_key="", triggered_by=triggered_by, status="queued")
     session.add(run)
     session.flush()
-    run.run_key = f"manual-8k-ingest-{run.id}"
+    run.run_key = f"{run_key}-{run.id}"
     session.add(run)
     enqueue_result = broker.enqueue(
-        task_name="manual-ingest-8k",
+        task_name=task_name,
         priority=BrokerPriority.P1,
-        job_key="manual-8k-ingest",
+        job_key=run_key,
         source_name="manual-ingest",
         payload={"run_id": run.id},
     )
@@ -39,9 +70,9 @@ async def ingest_now(request: Request, session: Session = Depends(get_session)):
         broker.finish_run(run_key)
         session.delete(run)
         session.commit()
-        flash(request, "warning", "An 8-K ingest run is already queued or running.")
+        flash(request, "warning", f"A {flash_label} ingest run is already queued or running.")
         return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
     session.commit()
-    flash(request, "success", "Queued a manual 8-K ingest run.")
+    flash(request, "success", f"Queued a manual {flash_label} ingest run.")
     return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)

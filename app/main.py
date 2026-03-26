@@ -15,15 +15,18 @@ from app.db import configure_database, dispose_database, init_database
 from app.logging import configure_logging, request_id_var
 from app.services.alerts import AlertDeliveryService
 from app.services.broker import SecRequestBroker
-from app.services.ingest import EightKIngestService
+from app.services.ingest import EightKIngestService, Form4IngestService
 from app.services.locks import SingletonProcessLock
 from app.services.notify.slack import SlackNotifier
 from app.services.scheduler import SchedulerService
 from app.services.scoring.eight_k import EightKScorer
+from app.services.scoring.form4 import Form4Scorer
 from app.services.sec.client import SecHttpClient
 from app.services.sec.eight_k import EightKParser
+from app.services.sec.form4 import Form4Parser
 from app.services.sec.resolver import TickerResolver
 from app.services.summarize.deterministic import DeterministicEightKSummarizer
+from app.services.summarize.form4 import DeterministicForm4Summarizer
 from app.services.worker import BrokerWorker
 from app.web.routes_actions import router as actions_router
 from app.web.routes_dashboard import router as dashboard_router
@@ -58,6 +61,9 @@ def create_app(
     parser = overrides.get("eight_k_parser") or EightKParser()
     scorer = overrides.get("eight_k_scorer") or EightKScorer()
     summarizer = overrides.get("summarizer") or DeterministicEightKSummarizer()
+    form4_parser = overrides.get("form4_parser") or Form4Parser()
+    form4_scorer = overrides.get("form4_scorer") or Form4Scorer()
+    form4_summarizer = overrides.get("form4_summarizer") or DeterministicForm4Summarizer()
     alert_delivery = overrides.get("alert_delivery") or AlertDeliveryService(slack_notifier)
     ingest_service = overrides.get("ingest_service") or EightKIngestService(
         sec_client=sec_client,
@@ -65,6 +71,15 @@ def create_app(
         parser=parser,
         scorer=scorer,
         summarizer=summarizer,
+        alert_delivery=alert_delivery,
+    )
+    form4_ingest_service = overrides.get("form4_ingest_service") or Form4IngestService(
+        broker=broker,
+        sec_client=sec_client,
+        resolver=resolver,
+        parser=form4_parser,
+        scorer=form4_scorer,
+        summarizer=form4_summarizer,
         alert_delivery=alert_delivery,
     )
     worker = overrides.get("worker") or BrokerWorker(broker)
@@ -82,8 +97,27 @@ def create_app(
         finally:
             broker.finish_run(f"reparse-8k-{filing_id}")
 
+    def handle_manual_form4_ingest(job) -> None:
+        try:
+            form4_ingest_service.run_manual_ingest(job.payload.get("run_id"))
+        finally:
+            broker.finish_run("manual-form4-ingest")
+
+    def handle_process_form4_accession(job) -> None:
+        form4_ingest_service.process_accession(job.payload)
+
+    def handle_form4_reparse(job) -> None:
+        filing_id = job.payload["filing_id"]
+        try:
+            form4_ingest_service.reparse_filing(filing_id)
+        finally:
+            broker.finish_run(f"reparse-form4-{filing_id}")
+
     worker.register_handler("manual-ingest-8k", handle_manual_ingest)
     worker.register_handler("reparse-8k", handle_reparse)
+    worker.register_handler("manual-ingest-form4", handle_manual_form4_ingest)
+    worker.register_handler("process-form4-accession", handle_process_form4_accession)
+    worker.register_handler("reparse-form4", handle_form4_reparse)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -98,6 +132,7 @@ def create_app(
         app.state.sec_client = sec_client
         app.state.resolver = resolver
         app.state.ingest_service = ingest_service
+        app.state.form4_ingest_service = form4_ingest_service
         scheduler.start()
         worker.start()
         try:

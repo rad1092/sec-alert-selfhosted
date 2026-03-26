@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>4 - Statement of changes in beneficial ownership</title>
+    <category term="4" />
+    <link href="https://www.sec.gov/Archives/edgar/data/320193/000032019326000200/0000320193-26-000200-index.html" />
+    <accession-number>0000320193-26-000200</accession-number>
+    <filing-date>2026-03-26</filing-date>
+    <acceptance-datetime>2026-03-26T09:31:00Z</acceptance-datetime>
+  </entry>
+  <entry>
+    <title>5 - Annual statement of changes in beneficial ownership</title>
+    <category term="5" />
+    <link href="https://www.sec.gov/Archives/edgar/data/320193/000032019326000299/0000320193-26-000299-index.html" />
+    <accession-number>0000320193-26-000299</accession-number>
+    <filing-date>2026-03-26</filing-date>
+    <acceptance-datetime>2026-03-26T09:00:00Z</acceptance-datetime>
+  </entry>
+  <entry>
+    <title>3 - Initial statement of beneficial ownership</title>
+    <category term="3" />
+    <link href="https://www.sec.gov/Archives/edgar/data/320193/000032019326000298/0000320193-26-000298-index.html" />
+    <accession-number>0000320193-26-000298</accession-number>
+    <filing-date>2026-03-26</filing-date>
+    <acceptance-datetime>2026-03-26T08:55:00Z</acceptance-datetime>
+  </entry>
+</feed>

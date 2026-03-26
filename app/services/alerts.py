@@ -58,6 +58,8 @@ class AlertDeliveryService:
                 "context": filing.summary_context,
                 "reasons": filing.reasons or [],
                 "source_url": filing.source_url,
+                "reporter_names": filing.reporter_names or [],
+                "reporter_count": len(filing.reporter_names or []),
             },
         )
         session.add(

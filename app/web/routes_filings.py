@@ -13,6 +13,7 @@ from app.services.broker import BrokerPriority
 from app.web.helpers import render_template
 
 router = APIRouter(prefix="/filings", tags=["filings"])
+FORM4_TYPES = {"4", "4/A"}
 
 
 @router.get("/{filing_id}")
@@ -53,13 +54,15 @@ async def reparse_filing(
     if filing is None:
         raise HTTPException(status_code=404, detail="Filing not found.")
 
-    run_key = f"reparse-8k-{filing.id}"
+    task_name = "reparse-form4" if filing.form_type in FORM4_TYPES else "reparse-8k"
+    run_prefix = "reparse-form4" if filing.form_type in FORM4_TYPES else "reparse-8k"
+    run_key = f"{run_prefix}-{filing.id}"
     if not request.app.state.broker.start_run(run_key):
         flash(request, "warning", f"Reparse already queued for {filing.accession_number}.")
         return RedirectResponse(f"/filings/{filing.id}", status_code=status.HTTP_303_SEE_OTHER)
 
     enqueue_result = request.app.state.broker.enqueue(
-        task_name="reparse-8k",
+        task_name=task_name,
         priority=BrokerPriority.P1,
         job_key=run_key,
         source_name="manual-reparse",

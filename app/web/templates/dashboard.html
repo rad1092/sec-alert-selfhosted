@@ -25,9 +25,13 @@
     <h2>Actions</h2>
     <form method="post" action="/actions/ingest-now" class="stack">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit">Run Ingest Now</button>
+      <button type="submit">Run 8-K Ingest Now</button>
     </form>
-    <p class="muted">Phase 2 keeps this path manual-first and broker-backed.</p>
+    <form method="post" action="/actions/ingest-form4-now" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">Run Form 4 Ingest Now</button>
+    </form>
+    <p class="muted">8-K and Form 4 both stay manual-first and broker-backed in v1.</p>
     <dl class="stack">
       <div><dt>Worker started</dt><dd>{{ worker_snapshot.started }}</dd></div>
       <div><dt>Worker idle</dt><dd>{{ worker_snapshot.idle }}</dd></div>
