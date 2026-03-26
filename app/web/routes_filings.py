@@ -10,6 +10,7 @@ from app.db import get_session
 from app.models import Alert, DeliveryAttempt, Filing
 from app.security import flash, validate_csrf
 from app.services.broker import BrokerPriority
+from app.services.summarize.base import effective_summary_for_filing
 from app.web.helpers import render_template
 
 router = APIRouter(prefix="/filings", tags=["filings"])
@@ -38,6 +39,7 @@ def filing_detail(
         "filing_detail.html",
         page_title=f"Filing {filing.accession_number}",
         filing=filing,
+        effective_summary=effective_summary_for_filing(filing),
         alert=alert,
         attempts=attempts,
     )

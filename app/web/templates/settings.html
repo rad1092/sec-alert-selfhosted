@@ -13,6 +13,7 @@
 
   <article class="card">
     <h2>Runtime State</h2>
+    <p>OpenAI rewrite available for summary text only; score remains rule-based.</p>
     <dl class="stack">
       <div><dt>Backlog</dt><dd>{{ broker_snapshot.backlog_size }}</dd></div>
       <div><dt>Oldest queued age</dt><dd>{{ broker_snapshot.oldest_queued_age_seconds }}s</dd></div>
@@ -20,8 +21,11 @@
       <div><dt>Recent 429</dt><dd>{{ broker_snapshot.recent_429_count }}</dd></div>
       <div><dt>Scheduler enabled</dt><dd>{{ scheduler_snapshot.enabled }}</dd></div>
       <div><dt>Scheduler started</dt><dd>{{ scheduler_snapshot.started }}</dd></div>
+      <div><dt>OpenAI rewrite active</dt><dd>{{ "yes" if openai_rewrite_active else "no" }}</dd></div>
+      {% for job in scheduler_snapshot.jobs %}
+      <div><dt>{{ job.id }}</dt><dd>{{ job.next_run_time or "Not scheduled" }}</dd></div>
+      {% endfor %}
     </dl>
   </article>
 </section>
 {% endblock %}
-

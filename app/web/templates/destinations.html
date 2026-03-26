@@ -3,33 +3,6 @@
 {% block content %}
 <section class="grid two-up">
   <article class="card">
-    <h2>Slack Destination</h2>
-    <form method="post" action="/destinations" class="stack">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>
-        Name
-        <input type="text" name="name" value="Primary Slack" required>
-      </label>
-      <label>
-        Notes
-        <textarea name="notes" rows="3"></textarea>
-      </label>
-      <label class="checkbox">
-        <input type="checkbox" name="enabled" checked>
-        Enabled
-      </label>
-      <button type="submit">Save Slack Metadata</button>
-    </form>
-    <form method="post" action="/destinations/slack/test" class="inline-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit">Send Slack Test</button>
-    </form>
-    <p class="muted">
-      Slack webhook URL is {{ "configured" if slack_configured else "not configured" }}.
-    </p>
-  </article>
-
-  <article class="card">
     <h2>Configured Destinations</h2>
     {% if destinations %}
     <table>
@@ -57,5 +30,72 @@
     {% endif %}
   </article>
 </section>
-{% endblock %}
 
+<section class="grid two-up">
+  {% for card in destination_cards %}
+  <article class="card">
+    <h2>{{ card.title }}</h2>
+    <form method="post" action="/destinations/{{ card.channel }}" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>
+        Name
+        <input
+          type="text"
+          name="name"
+          value="{{ card.destination.name if card.destination else card.title }}"
+          required
+        >
+      </label>
+      <label>
+        Notes
+        <textarea name="notes" rows="3">{{ card.destination.notes if card.destination and card.destination.notes else "" }}</textarea>
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" name="enabled" {% if not card.destination or card.destination.enabled %}checked{% endif %}>
+        Enabled
+      </label>
+      <button type="submit">Save {{ card.title }} Metadata</button>
+    </form>
+    <form method="post" action="/destinations/{{ card.channel }}/test" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">Send {{ card.title }} Test</button>
+    </form>
+    <p class="muted">{{ card.description }}</p>
+    <p class="muted">
+      Config source: <code>{{ card.config_label }}</code><br>
+      Runtime config is {{ "configured" if card.configured else "not configured" }}.
+    </p>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="card">
+  <h2>Recent Delivery Attempts</h2>
+  {% if recent_attempts %}
+  <table>
+    <thead>
+      <tr>
+        <th>Destination</th>
+        <th>Channel</th>
+        <th>Status</th>
+        <th>Response</th>
+        <th>Retryable</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for attempt in recent_attempts %}
+      <tr>
+        <td>{{ attempt.destination.name if attempt.destination else "-" }}</td>
+        <td>{{ attempt.channel }}</td>
+        <td>{{ attempt.status }}</td>
+        <td>{{ attempt.response_code or attempt.error_message or "-" }}</td>
+        <td>{{ attempt.retryable }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No delivery attempts recorded yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

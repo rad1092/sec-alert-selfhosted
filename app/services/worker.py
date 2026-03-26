@@ -80,6 +80,7 @@ class BrokerWorker:
             handler = self._handlers.get(job.task_name)
             if handler is None:
                 logger.warning("No handler registered for broker task '%s'.", job.task_name)
+                self.broker.complete(job.job_key)
                 continue
 
             self._idle_event.clear()
@@ -90,5 +91,6 @@ class BrokerWorker:
             except Exception:
                 logger.exception("Broker job '%s' failed.", job.job_key)
             finally:
+                self.broker.complete(job.job_key)
                 with self._lock:
                     self._active_job_key = None

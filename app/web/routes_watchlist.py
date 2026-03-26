@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 from starlette import status
 
 from app.db import get_session
-from app.models import WatchlistEntry
+from app.models import IngestRun, WatchlistEntry
 from app.security import flash, validate_csrf
+from app.services.broker import BrokerPriority
 from app.web.helpers import render_template
 
 router = APIRouter(prefix="/watchlist", tags=["watchlist"])
@@ -65,6 +66,13 @@ async def create_watchlist_entry(
     )
     session.add(entry)
     session.commit()
+    if entry.enabled:
+        _queue_backfill_run(
+            request=request,
+            session=session,
+            entry_id=entry.id,
+            trigger="watchlist_create",
+        )
 
     if existing_count + 1 >= settings.watchlist_soft_cap:
         flash(
@@ -86,10 +94,42 @@ async def toggle_watchlist_entry(
     await validate_csrf(request)
     entry = session.get(WatchlistEntry, entry_id)
     if entry is not None:
+        was_enabled = entry.enabled
         entry.enabled = not entry.enabled
         session.add(entry)
         session.commit()
+        if not was_enabled and entry.enabled:
+            _queue_backfill_run(
+                request=request,
+                session=session,
+                entry_id=entry.id,
+                trigger="watchlist_enable",
+            )
         flash(request, "success", f"Updated {entry.ticker}.")
+    return RedirectResponse("/watchlist", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/{entry_id}/backfill-now")
+async def backfill_watchlist_entry(
+    request: Request,
+    entry_id: int,
+    session: Session = Depends(get_session),
+):
+    await validate_csrf(request)
+    entry = session.get(WatchlistEntry, entry_id)
+    if entry is None:
+        return RedirectResponse("/watchlist", status_code=status.HTTP_303_SEE_OTHER)
+
+    queued = _queue_backfill_run(
+        request=request,
+        session=session,
+        entry_id=entry.id,
+        trigger="manual_backfill",
+    )
+    if queued:
+        flash(request, "success", f"Queued a backfill run for {entry.ticker}.")
+    else:
+        flash(request, "warning", f"A backfill run is already queued for {entry.ticker}.")
     return RedirectResponse("/watchlist", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -107,3 +147,46 @@ async def delete_watchlist_entry(
         session.commit()
         flash(request, "success", f"Deleted {ticker} from the watchlist.")
     return RedirectResponse("/watchlist", status_code=status.HTTP_303_SEE_OTHER)
+
+
+def _queue_backfill_run(
+    *,
+    request: Request,
+    session: Session,
+    entry_id: int,
+    trigger: str,
+) -> bool:
+    broker = request.app.state.broker
+    run_key = f"backfill:watchlist:{entry_id}"
+    if not broker.start_run(run_key):
+        return False
+
+    run = IngestRun(run_key="", triggered_by=trigger, status="queued")
+    session.add(run)
+    session.flush()
+    run.run_key = f"{run_key}:{run.id}"
+    session.add(run)
+    enqueue_result = broker.enqueue(
+        task_name="backfill-watchlist-chunk",
+        priority=BrokerPriority.P3,
+        job_key=f"backfill:watchlist:{entry_id}:step:0",
+        source_name="watchlist-backfill",
+        payload={
+            "run_id": run.id,
+            "run_key": run_key,
+            "entry_id": entry_id,
+            "remaining_days": [],
+            "current_day": None,
+            "offset": 0,
+            "matched": 0,
+            "enqueued": 0,
+            "trigger": trigger,
+        },
+    )
+    if not enqueue_result.accepted:
+        broker.finish_run(run_key)
+        session.delete(run)
+        session.commit()
+        return False
+    session.commit()
+    return True

@@ -14,9 +14,33 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("SEC_USER_AGENT", "SEC Alert Test test@example.com")
 os.environ.setdefault("APP_HOST", "127.0.0.1")
+os.environ.pop("OPENAI_API_KEY", None)
+os.environ.pop("OPENAI_MODEL", None)
 
 from app.config import Settings
 from app.main import create_app
+from app.services.sec.client import FixtureSecClient
+
+
+class LenientFixtureSecClient(FixtureSecClient):
+    def get_json(self, url: str) -> dict:
+        try:
+            return super().get_json(url)
+        except KeyError:
+            return {"filings": {"recent": {}}, "name": None, "tickers": []}
+
+    def get_text(self, url: str) -> str:
+        try:
+            return super().get_text(url)
+        except KeyError:
+            if url.endswith(".idx"):
+                return "Description|Header|Ignored|Ignored|Ignored\n"
+            if url.endswith("output=atom"):
+                return (
+                    '<?xml version="1.0" encoding="UTF-8"?>'
+                    '<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
+                )
+            return ""
 
 
 def extract_csrf_token(html: str) -> str:
@@ -35,6 +59,8 @@ def settings(tmp_path: Path) -> Settings:
         SEC_USER_AGENT="SEC Alert Test test@example.com",
         SEC_POLL_INTERVAL_SECONDS=60,
         SEC_RATE_LIMIT_RPS=2,
+        OPENAI_API_KEY=None,
+        OPENAI_MODEL=None,
         SCHEDULER_ENABLED=False,
         TESTING=True,
     )
@@ -42,6 +68,9 @@ def settings(tmp_path: Path) -> Settings:
 
 @pytest.fixture()
 def client(settings: Settings):
-    app = create_app(settings)
+    app = create_app(
+        settings,
+        service_overrides={"sec_client": LenientFixtureSecClient()},
+    )
     with TestClient(app) as test_client:
         yield test_client

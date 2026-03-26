@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -13,6 +14,14 @@ class ParsedEightK:
     item_numbers: list[str]
     cleaned_body: str
     exhibit_titles: list[str]
+
+
+@dataclass
+class EightKDetailDocument:
+    url: str
+    filename: str
+    description: str
+    document_type: str
 
 
 class EightKParser:
@@ -68,3 +77,66 @@ class EightKParser:
 
     def _clean_text(self, text: str) -> str:
         return re.sub(r"\s+", " ", text).strip()
+
+
+def parse_eight_k_detail_documents(
+    detail_index_html: str,
+    *,
+    detail_url: str,
+) -> list[EightKDetailDocument]:
+    soup = BeautifulSoup(detail_index_html, "html.parser")
+    documents: list[EightKDetailDocument] = []
+    for row in soup.find_all("tr"):
+        if row.find("td") is None:
+            continue
+        cells = [cell.get_text(" ", strip=True) for cell in row.find_all(["td", "th"])]
+        if len(cells) < 4:
+            continue
+        if len(cells) >= 5:
+            description = cells[1]
+            filename = cells[2]
+            document_type = cells[3].upper()
+        else:
+            description = cells[0]
+            filename = cells[1]
+            document_type = cells[2].upper()
+
+        link = row.find("a", href=True)
+        if link is not None:
+            url = urljoin(detail_url, link["href"].strip())
+        elif filename:
+            url = urljoin(detail_url, filename)
+        else:
+            continue
+
+        documents.append(
+            EightKDetailDocument(
+                url=url,
+                filename=filename,
+                description=description,
+                document_type=document_type,
+            )
+        )
+    return documents
+
+
+def locate_primary_eight_k_document_url(
+    detail_index_html: str,
+    *,
+    detail_url: str,
+    form_type: str,
+) -> str | None:
+    documents = parse_eight_k_detail_documents(detail_index_html, detail_url=detail_url)
+    preferred_types = {form_type.upper()}
+    if form_type.upper() == "8-K/A":
+        preferred_types.add("8-K")
+    else:
+        preferred_types.add("8-K/A")
+
+    for document in documents:
+        if document.document_type in preferred_types:
+            return document.url
+    for document in documents:
+        if document.filename.lower().endswith((".htm", ".html", ".txt")):
+            return document.url
+    return None

@@ -51,6 +51,14 @@ def configure_logging(settings: Settings) -> None:
     secrets_to_redact = []
     if settings.slack_webhook_url is not None:
         secrets_to_redact.append(settings.slack_webhook_url.get_secret_value())
+    if settings.alert_webhook_url is not None:
+        secrets_to_redact.append(settings.alert_webhook_url.get_secret_value())
+    if settings.alert_webhook_secret is not None:
+        secrets_to_redact.append(settings.alert_webhook_secret.get_secret_value())
+    if settings.smtp_username is not None:
+        secrets_to_redact.append(settings.smtp_username.get_secret_value())
+    if settings.smtp_password is not None:
+        secrets_to_redact.append(settings.smtp_password.get_secret_value())
     handler.addFilter(SensitiveDataFilter(secrets_to_redact))
     formatter = logging.Formatter(
         fmt="%(asctime)s %(levelname)s [%(request_id)s] %(name)s - %(message)s",

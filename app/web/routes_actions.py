@@ -39,6 +39,22 @@ async def ingest_form4_now(request: Request, session: Session = Depends(get_sess
     )
 
 
+@router.post("/repair-now")
+async def repair_now(request: Request, session: Session = Depends(get_session)):
+    await validate_csrf(request)
+    return _queue_ingest_run(
+        request=request,
+        session=session,
+        run_key="repair:recent",
+        task_name="orchestrate-repair-recent",
+        flash_label="repair",
+        triggered_by="repair",
+        priority=BrokerPriority.P3,
+        source_name="manual-repair",
+        success_message="Queued a rolling repair run.",
+    )
+
+
 def _queue_ingest_run(
     *,
     request: Request,
@@ -47,6 +63,9 @@ def _queue_ingest_run(
     task_name: str,
     flash_label: str,
     triggered_by: str,
+    priority: BrokerPriority = BrokerPriority.P1,
+    source_name: str = "manual-ingest",
+    success_message: str | None = None,
 ):
     broker = request.app.state.broker
 
@@ -61,10 +80,13 @@ def _queue_ingest_run(
     session.add(run)
     enqueue_result = broker.enqueue(
         task_name=task_name,
-        priority=BrokerPriority.P1,
+        priority=priority,
         job_key=run_key,
-        source_name="manual-ingest",
-        payload={"run_id": run.id},
+        source_name=source_name,
+        payload={
+            "run_id": run.id,
+            "run_started": True,
+        },
     )
     if not enqueue_result.accepted:
         broker.finish_run(run_key)
@@ -74,5 +96,9 @@ def _queue_ingest_run(
         return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
     session.commit()
-    flash(request, "success", f"Queued a manual {flash_label} ingest run.")
+    flash(
+        request,
+        "success",
+        success_message or f"Queued a manual {flash_label} ingest run.",
+    )
     return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)

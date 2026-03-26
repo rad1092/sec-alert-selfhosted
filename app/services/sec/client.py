@@ -122,3 +122,47 @@ class FixtureSecClient:
         if url not in self.text_map:
             raise KeyError(f"No text fixture for {url}")
         return self.text_map[url]
+
+
+class ScriptedFixtureSecClient(FixtureSecClient):
+    def __init__(
+        self,
+        json_map: Mapping[str, dict] | None = None,
+        text_map: Mapping[str, str] | None = None,
+        *,
+        json_sequences: Mapping[str, list[dict]] | None = None,
+        text_sequences: Mapping[str, list[str]] | None = None,
+    ) -> None:
+        super().__init__(json_map=json_map, text_map=text_map)
+        self.json_sequences = {
+            url: [item for item in sequence]
+            for url, sequence in (json_sequences or {}).items()
+        }
+        self.text_sequences = {
+            url: [item for item in sequence]
+            for url, sequence in (text_sequences or {}).items()
+        }
+        self._json_positions: dict[str, int] = {}
+        self._text_positions: dict[str, int] = {}
+
+    def get_json(self, url: str) -> dict:
+        if url in self.json_sequences:
+            self.calls.append(url)
+            sequence = self.json_sequences[url]
+            position = self._json_positions.get(url, 0)
+            if position < len(sequence):
+                self._json_positions[url] = position + 1
+                return sequence[position]
+            return sequence[-1]
+        return super().get_json(url)
+
+    def get_text(self, url: str) -> str:
+        if url in self.text_sequences:
+            self.calls.append(url)
+            sequence = self.text_sequences[url]
+            position = self._text_positions.get(url, 0)
+            if position < len(sequence):
+                self._text_positions[url] = position + 1
+                return sequence[position]
+            return sequence[-1]
+        return super().get_text(url)

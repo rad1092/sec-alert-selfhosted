@@ -29,6 +29,7 @@
       <button type="submit">Add To Watchlist</button>
     </form>
     <p class="muted">Validated for {{ watchlist_soft_cap }} issuers, hard cap {{ watchlist_hard_cap }}.</p>
+    <p class="muted">Manual CIK override always wins over stored issuer CIK and ticker resolution. Creating or re-enabling an entry queues a 30-day background backfill.</p>
   </article>
 
   <article class="card">
@@ -56,6 +57,10 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button type="submit">{{ "Pause" if entry.enabled else "Enable" }}</button>
             </form>
+            <form method="post" action="/watchlist/{{ entry.id }}/backfill-now">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="secondary">Backfill Now</button>
+            </form>
             <form method="post" action="/watchlist/{{ entry.id }}/delete">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button type="submit" class="secondary">Delete</button>
@@ -71,4 +76,3 @@
   </article>
 </section>
 {% endblock %}
-

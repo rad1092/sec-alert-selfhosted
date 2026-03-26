@@ -41,6 +41,40 @@ def test_settings_reject_rate_limit_above_ten(tmp_path: Path):
         )
 
 
+def test_settings_default_8k_overlap_rows(tmp_path: Path):
+    settings = Settings(
+        APP_HOST="127.0.0.1",
+        DATA_DIR=tmp_path,
+        DATABASE_URL=f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
+        SEC_USER_AGENT="SEC Alert Test test@example.com",
+    )
+    assert settings.sec_live_8k_overlap_rows == 20
+
+
+def test_settings_reject_invalid_8k_overlap_rows(tmp_path: Path):
+    with pytest.raises(ValidationError):
+        Settings(
+            APP_HOST="127.0.0.1",
+            DATA_DIR=tmp_path,
+            DATABASE_URL=f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
+            SEC_USER_AGENT="SEC Alert Test test@example.com",
+            SEC_LIVE_8K_OVERLAP_ROWS=4,
+        )
+
+
+def test_settings_treat_blank_openai_values_as_unconfigured(tmp_path: Path):
+    settings = Settings(
+        APP_HOST="127.0.0.1",
+        DATA_DIR=tmp_path,
+        DATABASE_URL=f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
+        SEC_USER_AGENT="SEC Alert Test test@example.com",
+        OPENAI_API_KEY="   ",
+        OPENAI_MODEL="   ",
+    )
+    assert settings.openai_api_key is None
+    assert settings.openai_model is None
+
+
 def test_settings_ensure_runtime_paths(tmp_path: Path):
     settings = Settings(
         APP_HOST="127.0.0.1",

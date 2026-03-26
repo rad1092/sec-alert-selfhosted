@@ -26,7 +26,28 @@ class Settings(BaseSettings):
     sec_user_agent: str = Field(alias="SEC_USER_AGENT")
     sec_poll_interval_seconds: int = Field(default=60, alias="SEC_POLL_INTERVAL_SECONDS")
     sec_rate_limit_rps: float = Field(default=2.0, alias="SEC_RATE_LIMIT_RPS")
+    sec_live_8k_overlap_rows: int = Field(
+        default=20,
+        alias="SEC_LIVE_8K_OVERLAP_ROWS",
+    )
     slack_webhook_url: SecretStr | None = Field(default=None, alias="SLACK_WEBHOOK_URL")
+    alert_webhook_url: SecretStr | None = Field(default=None, alias="ALERT_WEBHOOK_URL")
+    alert_webhook_secret: SecretStr | None = Field(
+        default=None,
+        alias="ALERT_WEBHOOK_SECRET",
+    )
+    localhost_webhook_test_mode: bool = Field(
+        default=False,
+        alias="LOCALHOST_WEBHOOK_TEST_MODE",
+    )
+    smtp_host: str | None = Field(default=None, alias="SMTP_HOST")
+    smtp_port: int | None = Field(default=None, alias="SMTP_PORT")
+    smtp_username: SecretStr | None = Field(default=None, alias="SMTP_USERNAME")
+    smtp_password: SecretStr | None = Field(default=None, alias="SMTP_PASSWORD")
+    smtp_from: str | None = Field(default=None, alias="SMTP_FROM")
+    smtp_to: str | None = Field(default=None, alias="SMTP_TO")
+    openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
+    openai_model: str | None = Field(default=None, alias="OPENAI_MODEL")
     scheduler_enabled: bool = Field(default=False, alias="SCHEDULER_ENABLED")
     session_secret: str = Field(
         default_factory=lambda: secrets.token_urlsafe(32),
@@ -68,6 +89,45 @@ class Settings(BaseSettings):
             raise ValueError("Watchlist caps must be positive integers.")
         return value
 
+    @field_validator("sec_live_8k_overlap_rows")
+    @classmethod
+    def validate_live_overlap_rows(cls, value: int) -> int:
+        if value < 5 or value > 100:
+            raise ValueError("SEC_LIVE_8K_OVERLAP_ROWS must be between 5 and 100.")
+        return value
+
+    @field_validator("smtp_port")
+    @classmethod
+    def validate_smtp_port(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
+        if value <= 0:
+            raise ValueError("SMTP_PORT must be greater than zero.")
+        return value
+
+    @field_validator("openai_api_key", mode="before")
+    @classmethod
+    def normalize_openai_api_key(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, SecretStr):
+            secret = value.get_secret_value().strip()
+            return SecretStr(secret) if secret else None
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
+    @field_validator("openai_model", mode="before")
+    @classmethod
+    def normalize_openai_model(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
     @model_validator(mode="after")
     def apply_defaults(self) -> Settings:
         if self.watchlist_soft_cap > self.watchlist_hard_cap:
@@ -95,6 +155,12 @@ class Settings(BaseSettings):
         if self.slack_webhook_url is None:
             return None
         parsed = urlparse(self.slack_webhook_url.get_secret_value())
+        return f"{parsed.scheme}://{parsed.netloc}/..."
+
+    def redacted_alert_webhook_url(self) -> str | None:
+        if self.alert_webhook_url is None:
+            return None
+        parsed = urlparse(self.alert_webhook_url.get_secret_value())
         return f"{parsed.scheme}://{parsed.netloc}/..."
 
 

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.db import open_session
 from app.main import create_app
-from app.models import Alert, DeliveryAttempt, Destination, Filing, StageError, WatchlistEntry
+from app.models import Alert, DeliveryAttempt, Destination, Filing, WatchlistEntry
 from app.services.scoring.form4 import Form4Scorer
 from app.services.sec.client import FixtureSecClient
 from app.services.sec.form4 import Form4Parser
@@ -37,6 +37,8 @@ def load_json(*parts: str) -> dict:
 
 
 class FakeSlackNotifier:
+    channel = "slack"
+
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
         self.sent_payloads: list[dict] = []
@@ -44,10 +46,11 @@ class FakeSlackNotifier:
     def is_configured(self) -> bool:
         return True
 
-    def send_test_message(self, destination_name: str):
-        return self.send_alert(destination_name=destination_name, payload={"headline": "test"})
+    def send_test_message(self, destination):
+        return self.send_alert(destination=destination, payload={"headline": "test"})
 
-    def send_alert(self, destination_name: str, payload: dict):
+    def send_alert(self, destination, payload: dict):
+        destination_name = getattr(destination, "name", destination)
         self.sent_payloads.append({"destination_name": destination_name, "payload": payload})
         if self.fail:
             from app.services.notify.base import NotificationResult
@@ -71,6 +74,8 @@ def make_settings(tmp_path: Path) -> Settings:
         SEC_USER_AGENT="SEC Alert Test test@example.com",
         SEC_POLL_INTERVAL_SECONDS=60,
         SEC_RATE_LIMIT_RPS=10,
+        OPENAI_API_KEY=None,
+        OPENAI_MODEL=None,
         SCHEDULER_ENABLED=False,
         TESTING=True,
     )
@@ -104,16 +109,20 @@ def create_phase3_client(
     *,
     fail_slack: bool = False,
     feed_case: str = "buy_multi_reporter",
+    summary_rewriter=None,
 ):
     settings = make_settings(tmp_path)
     fixture_sec_client = make_fixture_client(feed_case=feed_case)
     fake_slack = FakeSlackNotifier(fail=fail_slack)
+    service_overrides = {
+        "sec_client": fixture_sec_client,
+        "slack_notifier": fake_slack,
+    }
+    if summary_rewriter is not None:
+        service_overrides["summary_rewriter"] = summary_rewriter
     app = create_app(
         settings,
-        service_overrides={
-            "sec_client": fixture_sec_client,
-            "slack_notifier": fake_slack,
-        },
+        service_overrides=service_overrides,
     )
     return TestClient(app), fake_slack, fixture_sec_client
 
@@ -322,13 +331,12 @@ def test_form4_slack_failure_is_isolated_from_ingest(tmp_path: Path):
             filing = session.query(Filing).one()
             alert = session.query(Alert).one()
             attempts = session.query(DeliveryAttempt).all()
-            errors = session.query(StageError).all()
-
             assert filing.summary_headline is not None
             assert alert.status == "delivery_failed"
             assert len(attempts) == 1
             assert attempts[0].status == "failed"
-            assert any(error.stage == "slack_delivery" for error in errors)
+            assert attempts[0].retryable is False
+            assert attempts[0].error_class is None or attempts[0].error_class == "HttpError"
 
         assert len(fake_slack.sent_payloads) == 1
 

@@ -5,10 +5,13 @@ from urllib.parse import urlparse
 import httpx
 
 from app.config import Settings
+from app.models import Destination
 from app.services.notify.base import NotificationResult
 
 
 class SlackNotifier:
+    channel = "slack"
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
@@ -21,12 +24,12 @@ class SlackNotifier:
         parsed = urlparse(self.settings.slack_webhook_url.get_secret_value())
         return parsed.scheme == "https"
 
-    def send_test_message(self, destination_name: str) -> NotificationResult:
+    def send_test_message(self, destination: Destination) -> NotificationResult:
         return self.send_alert(
-            destination_name=destination_name,
+            destination=destination,
             payload={
-                "headline": f"[SEC Alert] Slack test message for destination '{destination_name}'.",
-                "context": "This is a Phase 2 Slack delivery smoke test.",
+                "headline": f"[SEC Alert] Slack test message for destination '{destination.name}'.",
+                "context": "This is a delivery test for the configured Slack destination.",
                 "score": None,
                 "confidence": None,
                 "reasons": [],
@@ -38,24 +41,48 @@ class SlackNotifier:
             },
         )
 
-    def send_alert(self, destination_name: str, payload: dict) -> NotificationResult:
+    def send_alert(self, destination: Destination, payload: dict) -> NotificationResult:
         if self.settings.slack_webhook_url is None:
-            return NotificationResult(status="skipped", detail="SLACK_WEBHOOK_URL is not set.")
+            return NotificationResult(
+                status="failed",
+                detail="SLACK_WEBHOOK_URL is not set.",
+                retryable=False,
+                error_class="MissingConfiguration",
+            )
         if not self.allowed():
             return NotificationResult(
                 status="failed",
                 detail="Slack webhook URL must use https.",
+                retryable=False,
+                error_class="InvalidConfiguration",
             )
-        response = httpx.post(
-            self.settings.slack_webhook_url.get_secret_value(),
-            json={"text": self._format_text(payload, destination_name)},
-            timeout=10.0,
-        )
+        try:
+            response = httpx.post(
+                self.settings.slack_webhook_url.get_secret_value(),
+                json={"text": self._format_text(payload, destination.name)},
+                timeout=10.0,
+            )
+        except httpx.TimeoutException:
+            return NotificationResult(
+                status="failed",
+                detail="Slack request timed out.",
+                retryable=True,
+                error_class="TimeoutError",
+            )
+        except httpx.HTTPError as exc:
+            return NotificationResult(
+                status="failed",
+                detail=str(exc),
+                retryable=True,
+                error_class=exc.__class__.__name__,
+            )
         if response.status_code >= 400:
             return NotificationResult(
                 status="failed",
                 detail=f"Slack responded with HTTP {response.status_code}.",
                 response_code=response.status_code,
+                retryable=response.status_code >= 500,
+                error_class="HttpError",
             )
         return NotificationResult(
             status="sent",

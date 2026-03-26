@@ -40,6 +40,7 @@ class SecRequestBroker:
         self._lock = threading.Lock()
         self._queue: list[QueuedJob] = []
         self._job_keys: set[str] = set()
+        self._inflight_job_keys: set[str] = set()
         self._sequence = 0
         self._active_runs: set[str] = set()
         self._recent_403_count = 0
@@ -56,7 +57,7 @@ class SecRequestBroker:
         payload: dict[str, Any] | None = None,
     ) -> EnqueueResult:
         with self._lock:
-            if job_key in self._job_keys:
+            if job_key in self._job_keys or job_key in self._inflight_job_keys:
                 return EnqueueResult(accepted=False, job_key=job_key, reason="duplicate")
             self._sequence += 1
             heapq.heappush(
@@ -80,7 +81,12 @@ class SecRequestBroker:
                 return None
             job = heapq.heappop(self._queue)
             self._job_keys.discard(job.job_key)
+            self._inflight_job_keys.add(job.job_key)
             return job
+
+    def complete(self, job_key: str) -> None:
+        with self._lock:
+            self._inflight_job_keys.discard(job_key)
 
     def can_issue_request(self, now: float | None = None) -> bool:
         with self._lock:
@@ -136,5 +142,10 @@ class SecRequestBroker:
                 "recent_403_count": self._recent_403_count,
                 "recent_429_count": self._recent_429_count,
                 "active_runs": sorted(self._active_runs),
+                "inflight_job_keys": sorted(self._inflight_job_keys),
                 "last_successful_poll": dict(self._last_successful_poll),
             }
+
+    def has_queued_higher_priority_than(self, priority: BrokerPriority) -> bool:
+        with self._lock:
+            return any(job.priority < int(priority) for job in self._queue)

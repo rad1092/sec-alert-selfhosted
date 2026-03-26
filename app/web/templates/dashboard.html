@@ -31,7 +31,15 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit">Run Form 4 Ingest Now</button>
     </form>
-    <p class="muted">8-K and Form 4 both stay manual-first and broker-backed in v1.</p>
+    <form method="post" action="/actions/repair-now" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="secondary">Run Repair Now</button>
+    </form>
+    <p class="muted">
+      Live polling and nightly repair are scheduler-driven only when
+      <code>SCHEDULER_ENABLED=true</code>. Manual ingest and repair controls stay available
+      for local ops and testing.
+    </p>
     <dl class="stack">
       <div><dt>Worker started</dt><dd>{{ worker_snapshot.started }}</dd></div>
       <div><dt>Worker idle</dt><dd>{{ worker_snapshot.idle }}</dd></div>
@@ -57,7 +65,12 @@
     <dl class="stack">
       <div><dt>Enabled</dt><dd>{{ scheduler_snapshot.enabled }}</dd></div>
       <div><dt>Started</dt><dd>{{ scheduler_snapshot.started }}</dd></div>
-      <div><dt>Last heartbeat</dt><dd>{{ scheduler_snapshot.last_heartbeat_at or "Not yet" }}</dd></div>
+      <div><dt>8-K enqueue</dt><dd>{{ scheduler_snapshot.last_enqueued_at.get("scheduler-live-8k") or "Not yet" }}</dd></div>
+      <div><dt>Form 4 enqueue</dt><dd>{{ scheduler_snapshot.last_enqueued_at.get("scheduler-live-form4") or "Not yet" }}</dd></div>
+      <div><dt>Repair enqueue</dt><dd>{{ scheduler_snapshot.last_enqueued_at.get("scheduler-repair-recent") or "Not yet" }}</dd></div>
+      {% for job in scheduler_snapshot.jobs %}
+      <div><dt>{{ job.id }}</dt><dd>{{ job.next_run_time or "Not scheduled" }}</dd></div>
+      {% endfor %}
     </dl>
   </article>
 </section>

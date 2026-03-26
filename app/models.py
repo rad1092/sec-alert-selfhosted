@@ -78,6 +78,11 @@ class Filing(TimestampMixin, Base):
     reasons: Mapped[list[str] | None] = mapped_column(JSON)
     summary_headline: Mapped[str | None] = mapped_column(Text)
     summary_context: Mapped[str | None] = mapped_column(Text)
+    openai_headline: Mapped[str | None] = mapped_column(Text)
+    openai_context: Mapped[str | None] = mapped_column(Text)
+    openai_category: Mapped[str | None] = mapped_column(String(32))
+    openai_model: Mapped[str | None] = mapped_column(String(128))
+    openai_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     alerts: Mapped[list[Alert]] = relationship(back_populates="filing")
 
@@ -96,6 +101,9 @@ class Alert(TimestampMixin, Base):
 
 class Destination(TimestampMixin, Base):
     __tablename__ = "destinations"
+    __table_args__ = (
+        UniqueConstraint("destination_type", name="uq_destinations_type"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -109,6 +117,14 @@ class Destination(TimestampMixin, Base):
 
 class DeliveryAttempt(TimestampMixin, Base):
     __tablename__ = "delivery_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "alert_id",
+            "destination_id",
+            "channel",
+            name="uq_delivery_attempts_alert_destination_channel",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     alert_id: Mapped[int | None] = mapped_column(ForeignKey("alerts.id"))
@@ -116,6 +132,8 @@ class DeliveryAttempt(TimestampMixin, Base):
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     response_code: Mapped[int | None]
+    retryable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    error_class: Mapped[str | None] = mapped_column(String(128))
     error_message: Mapped[str | None] = mapped_column(Text)
 
     alert: Mapped[Alert | None] = relationship(back_populates="delivery_attempts")
