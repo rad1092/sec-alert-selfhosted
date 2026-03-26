@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid two-up">
+  <article class="card">
+    <h2>Filing Summary</h2>
+    <dl class="stack">
+      <div><dt>Accession</dt><dd>{{ filing.accession_number }}</dd></div>
+      <div><dt>Form</dt><dd>{{ filing.form_type }}</dd></div>
+      <div><dt>Issuer</dt><dd>{{ filing.issuer_ticker or filing.issuer_name or "-" }}</dd></div>
+      <div><dt>Score</dt><dd>{{ filing.score if filing.score is not none else "-" }}</dd></div>
+      <div><dt>Confidence</dt><dd>{{ filing.confidence or "-" }}</dd></div>
+      <div><dt>Parser status</dt><dd>{{ filing.parser_status }}</dd></div>
+      <div><dt>Headline</dt><dd>{{ filing.summary_headline or "-" }}</dd></div>
+      <div><dt>Context</dt><dd>{{ filing.summary_context or "-" }}</dd></div>
+      <div><dt>Detail index</dt><dd>{% if filing.detail_url %}<a href="{{ filing.detail_url }}">open</a>{% else %}-{% endif %}</dd></div>
+      <div><dt>Primary doc</dt><dd>{% if filing.source_url %}<a href="{{ filing.source_url }}">open</a>{% else %}-{% endif %}</dd></div>
+    </dl>
+    <form method="post" action="/filings/{{ filing.id }}/reparse" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">Reparse Filing</button>
+    </form>
+  </article>
+
+  <article class="card">
+    <h2>Parsed Payload</h2>
+    {% if filing.normalized_payload %}
+    <dl class="stack">
+      <div><dt>Items</dt><dd>{{ filing.normalized_payload.item_numbers | join(", ") if filing.normalized_payload.item_numbers else "-" }}</dd></div>
+      <div><dt>Exhibits</dt><dd>{{ filing.normalized_payload.exhibit_titles | join(", ") if filing.normalized_payload.exhibit_titles else "-" }}</dd></div>
+      <div><dt>Reasons</dt><dd>{{ filing.reasons | join("; ") if filing.reasons else "-" }}</dd></div>
+    </dl>
+    <p>{{ filing.normalized_payload.cleaned_body or "-" }}</p>
+    {% else %}
+    <p>No parsed payload stored yet.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="card">
+  <h2>Alert Delivery</h2>
+  {% if alert %}
+  <p>Status: {{ alert.status }}</p>
+  {% if attempts %}
+  <table>
+    <thead>
+      <tr>
+        <th>Channel</th>
+        <th>Status</th>
+        <th>Response</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for attempt in attempts %}
+      <tr>
+        <td>{{ attempt.channel }}</td>
+        <td>{{ attempt.status }}</td>
+        <td>{{ attempt.response_code or attempt.error_message or "-" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No delivery attempts recorded.</p>
+  {% endif %}
+  {% else %}
+  <p>No alert has been created for this filing yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

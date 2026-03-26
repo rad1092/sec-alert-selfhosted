@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.models import Alert, Destination, StageError, WatchlistEntry
+from app.models import Alert, Destination, Filing, IngestRun, StageError, WatchlistEntry
 from app.web.helpers import render_template
 
 router = APIRouter()
@@ -17,6 +17,12 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
     alerts_count = session.scalar(select(func.count()).select_from(Alert)) or 0
     errors_count = session.scalar(select(func.count()).select_from(StageError)) or 0
     destinations_count = session.scalar(select(func.count()).select_from(Destination)) or 0
+    recent_filings = session.scalars(
+        select(Filing).order_by(Filing.created_at.desc()).limit(10)
+    ).all()
+    recent_runs = session.scalars(
+        select(IngestRun).order_by(IngestRun.created_at.desc()).limit(5)
+    ).all()
 
     return render_template(
         request,
@@ -26,8 +32,11 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         alerts_count=alerts_count,
         errors_count=errors_count,
         destinations_count=destinations_count,
+        recent_filings=recent_filings,
+        recent_runs=recent_runs,
         broker_snapshot=request.app.state.broker.snapshot(),
         scheduler_snapshot=request.app.state.scheduler.snapshot(),
+        worker_snapshot=request.app.state.worker.snapshot(),
     )
 
 

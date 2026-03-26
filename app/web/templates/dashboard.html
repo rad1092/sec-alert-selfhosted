@@ -22,6 +22,20 @@
 
 <section class="grid two-up">
   <article class="card">
+    <h2>Actions</h2>
+    <form method="post" action="/actions/ingest-now" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">Run Ingest Now</button>
+    </form>
+    <p class="muted">Phase 2 keeps this path manual-first and broker-backed.</p>
+    <dl class="stack">
+      <div><dt>Worker started</dt><dd>{{ worker_snapshot.started }}</dd></div>
+      <div><dt>Worker idle</dt><dd>{{ worker_snapshot.idle }}</dd></div>
+      <div><dt>Active job</dt><dd>{{ worker_snapshot.active_job_key or "None" }}</dd></div>
+    </dl>
+  </article>
+
+  <article class="card">
     <h2>Broker Snapshot</h2>
     <dl class="stack">
       <div><dt>Backlog</dt><dd>{{ broker_snapshot.backlog_size }}</dd></div>
@@ -43,5 +57,60 @@
     </dl>
   </article>
 </section>
-{% endblock %}
 
+<section class="grid two-up">
+  <article class="card">
+    <h2>Recent Filings</h2>
+    {% if recent_filings %}
+    <table>
+      <thead>
+        <tr>
+          <th>Accession</th>
+          <th>Form</th>
+          <th>Issuer</th>
+          <th>Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for filing in recent_filings %}
+        <tr>
+          <td><a href="/filings/{{ filing.id }}">{{ filing.accession_number }}</a></td>
+          <td>{{ filing.form_type }}</td>
+          <td>{{ filing.issuer_ticker or filing.issuer_name or "-" }}</td>
+          <td>{{ filing.score if filing.score is not none else "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>No filings processed yet.</p>
+    {% endif %}
+  </article>
+
+  <article class="card">
+    <h2>Recent Ingest Runs</h2>
+    {% if recent_runs %}
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Status</th>
+          <th>Triggered By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in recent_runs %}
+        <tr>
+          <td>{{ run.id }}</td>
+          <td>{{ run.status }}</td>
+          <td>{{ run.triggered_by }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>No ingest runs yet.</p>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

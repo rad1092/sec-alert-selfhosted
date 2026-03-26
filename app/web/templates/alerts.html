@@ -18,7 +18,7 @@
       <tr>
         <td>{{ alert.id }}</td>
         <td>{{ alert.status }}</td>
-        <td>{{ alert.headline or "-" }}</td>
+        <td>{% if alert.filing_id %}<a href="/filings/{{ alert.filing_id }}">{{ alert.headline or "-" }}</a>{% else %}{{ alert.headline or "-" }}{% endif %}</td>
         <td>{{ alert.created_at }}</td>
       </tr>
       {% endfor %}
@@ -29,4 +29,3 @@
   {% endif %}
 </section>
 {% endblock %}
-

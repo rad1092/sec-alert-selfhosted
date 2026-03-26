@@ -80,3 +80,9 @@ def get_session() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+
+def open_session() -> Session:
+    if _session_factory is None:
+        raise RuntimeError("Database session factory is not configured.")
+    return _session_factory()
