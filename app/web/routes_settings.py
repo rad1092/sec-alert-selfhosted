@@ -36,10 +36,24 @@ def settings_page(request: Request):
         "OPENAI_API_KEY": "Configured" if settings.openai_api_key else "Not configured",
         "OPENAI_MODEL": settings.openai_model or "Not configured",
     }
+    status_sections = {
+        "App mode": "Automatic polling" if settings.scheduler_enabled else "Manual-only",
+        "OpenAI rewrite active": "yes" if request.app.state.summary_rewriter.is_active() else "no",
+        "OPENAI_API_KEY": "Configured" if settings.openai_api_key else "Not configured",
+        "OPENAI_MODEL": settings.openai_model or "Not configured",
+        "Slack notifications": "Configured" if settings.slack_webhook_url else "Not configured",
+        "Webhook notifications": "Configured" if settings.alert_webhook_url else "Not configured",
+        "SMTP email": (
+            "Configured"
+            if settings.smtp_to and settings.smtp_from and settings.smtp_host
+            else "Not configured"
+        ),
+    }
     return render_template(
         request,
         "settings.html",
         page_title="Settings",
+        status_sections=status_sections,
         settings_map=sanitized,
         openai_rewrite_active=request.app.state.summary_rewriter.is_active(),
         broker_snapshot=request.app.state.broker.snapshot(),

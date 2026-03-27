@@ -382,10 +382,11 @@ def test_repair_recovers_missed_recent_8k_and_form4(tmp_path: Path, monkeypatch)
 
     form4_detail = (
         "https://www.sec.gov/Archives/edgar/data/320193/"
-        "000032019326000200/0000320193-26-000200-index.html"
+        "000032019326000204/0000320193-26-000204-index.html"
     )
     form4_xml = (
-        "https://www.sec.gov/Archives/edgar/data/320193/000032019326000200/form4-multi-buy.xml"
+        "https://www.sec.gov/Archives/edgar/data/320193/"
+        "000032019326000204/xslF345X05/wk-form4_1772053959.xml"
     )
     sec_client = ScriptedFixtureSecClient(
         json_map={COMPANY_TICKERS_URL: load_json("company_tickers.json")},
@@ -396,7 +397,7 @@ def test_repair_recovers_missed_recent_8k_and_form4(tmp_path: Path, monkeypatch)
             ),
             daily_master_index_url(repair_days[1]): master_index(
                 "0000320193|Apple Inc.|4|2026-03-24|"
-                "edgar/data/320193/000032019326000200/form4-multi-buy.xml"
+                "edgar/data/320193/000032019326000204/xslF345X05/wk-form4_1772053959.xml"
             ),
             detail_url(AAPL_CIK, "0000320193-26-000100"): load_text(
                 "eight_k", "aapl_402", "detail-index.html"
@@ -404,8 +405,8 @@ def test_repair_recovers_missed_recent_8k_and_form4(tmp_path: Path, monkeypatch)
             primary_url(AAPL_CIK, "0000320193-26-000100", "aapl-20260325x8k402.htm"): load_text(
                 "eight_k", "aapl_402", "primary.html"
             ),
-            form4_detail: load_text("form4", "buy_multi_reporter", "detail-index.html"),
-            form4_xml: load_text("form4", "buy_multi_reporter", "ownership.xml"),
+            form4_detail: load_text("form4", "live_xsl_case", "detail-index.html"),
+            form4_xml: load_text("form4", "live_xsl_case", "ownership.xml"),
         },
     )
     client, fake_slack = make_phase4_client(tmp_path, sec_client=sec_client)
@@ -435,10 +436,11 @@ def test_backfill_recovers_historical_accessions_for_new_and_reenabled_watchlist
 
     form4_detail = (
         "https://www.sec.gov/Archives/edgar/data/320193/"
-        "000032019326000200/0000320193-26-000200-index.html"
+        "000032019326000204/0000320193-26-000204-index.html"
     )
     form4_xml = (
-        "https://www.sec.gov/Archives/edgar/data/320193/000032019326000200/form4-multi-buy.xml"
+        "https://www.sec.gov/Archives/edgar/data/320193/"
+        "000032019326000204/xslF345X05/wk-form4_1772053959.xml"
     )
     sec_client = ScriptedFixtureSecClient(
         json_map={COMPANY_TICKERS_URL: load_json("company_tickers.json")},
@@ -449,7 +451,7 @@ def test_backfill_recovers_historical_accessions_for_new_and_reenabled_watchlist
             ),
             daily_master_index_url(backfill_days[1]): master_index(
                 "0000320193|Apple Inc.|4|2026-03-19|"
-                "edgar/data/320193/000032019326000200/form4-multi-buy.xml"
+                "edgar/data/320193/000032019326000204/xslF345X05/wk-form4_1772053959.xml"
             ),
             detail_url(AAPL_CIK, "0000320193-26-000100"): load_text(
                 "eight_k", "aapl_402", "detail-index.html"
@@ -457,8 +459,8 @@ def test_backfill_recovers_historical_accessions_for_new_and_reenabled_watchlist
             primary_url(AAPL_CIK, "0000320193-26-000100", "aapl-20260325x8k402.htm"): load_text(
                 "eight_k", "aapl_402", "primary.html"
             ),
-            form4_detail: load_text("form4", "buy_multi_reporter", "detail-index.html"),
-            form4_xml: load_text("form4", "buy_multi_reporter", "ownership.xml"),
+            form4_detail: load_text("form4", "live_xsl_case", "detail-index.html"),
+            form4_xml: load_text("form4", "live_xsl_case", "ownership.xml"),
         },
     )
     client, fake_slack = make_phase4_client(tmp_path, sec_client=sec_client)

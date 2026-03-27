@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 from starlette import status
 
 from app.db import get_session
-from app.models import IngestRun, WatchlistEntry
+from app.models import Filing, IngestRun, WatchlistEntry
 from app.security import flash, validate_csrf
 from app.services.broker import BrokerPriority
 from app.web.helpers import render_template
@@ -17,10 +17,52 @@ router = APIRouter(prefix="/watchlist", tags=["watchlist"])
 
 @router.get("")
 def list_watchlist(request: Request, session: Session = Depends(get_session)):
-    entries = session.scalars(
+    stored_entries = session.scalars(
         select(WatchlistEntry).order_by(WatchlistEntry.created_at.desc())
     ).all()
     settings = request.app.state.settings
+    entries = []
+    for entry in stored_entries:
+        resolved_cik = entry.manual_cik_override or entry.issuer_cik
+        filing_filters = [Filing.issuer_ticker == entry.ticker]
+        if resolved_cik:
+            filing_filters.append(Filing.issuer_cik == resolved_cik)
+        last_filing_date = session.scalar(
+            select(func.max(Filing.filed_date)).where(or_(*filing_filters))
+        )
+        latest_backfill_run = session.scalar(
+            select(IngestRun)
+            .where(IngestRun.run_key.like(f"backfill:watchlist:{entry.id}:%"))
+            .order_by(IngestRun.created_at.desc())
+            .limit(1)
+        )
+        hints: list[str] = []
+        hints.append("Enabled" if entry.enabled else "Paused")
+        if entry.manual_cik_override:
+            hints.append("Manual CIK override active")
+        if latest_backfill_run and latest_backfill_run.status in {"queued", "running"}:
+            hints.append("30-day backfill likely running")
+        elif latest_backfill_run and latest_backfill_run.status == "completed":
+            hints.append("30-day backfill completed")
+        if last_filing_date is None:
+            hints.append("No filings yet")
+        entries.append(
+            {
+                "id": entry.id,
+                "ticker": entry.ticker,
+                "issuer_display": entry.issuer_name or entry.ticker,
+                "resolved_cik": resolved_cik,
+                "enabled": entry.enabled,
+                "last_filing_date": (
+                    last_filing_date.isoformat() if last_filing_date else "No filings yet"
+                ),
+                "hint_summary": " • ".join(hints),
+                "backfill_status": (
+                    latest_backfill_run.status if latest_backfill_run else "not started"
+                ),
+                "manual_override": entry.manual_cik_override,
+            }
+        )
     return render_template(
         request,
         "watchlist.html",

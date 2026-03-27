@@ -60,7 +60,7 @@ def list_destinations(request: Request, session: Session = Depends(get_session))
     return render_template(
         request,
         "destinations.html",
-        page_title="Destinations",
+        page_title="Notifications",
         destination_cards=cards,
         destinations=destinations,
         recent_attempts=recent_attempts,

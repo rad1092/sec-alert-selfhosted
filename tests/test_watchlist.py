@@ -45,4 +45,4 @@ def test_watchlist_crud(client):
         follow_redirects=True,
     )
     assert delete_response.status_code == 200
-    assert "No issuers added yet." in delete_response.text
+    assert "No companies added yet." in delete_response.text

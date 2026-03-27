@@ -98,4 +98,17 @@ def _parse_date(value: str | None) -> date | None:
 def _parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
-    return datetime.strptime(value, "%Y%m%d%H%M%S").replace(tzinfo=UTC)
+    normalized = value.strip()
+    if not normalized:
+        return None
+    try:
+        return datetime.strptime(normalized, "%Y%m%d%H%M%S").replace(tzinfo=UTC)
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)

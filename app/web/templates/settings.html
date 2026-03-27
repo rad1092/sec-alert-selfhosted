@@ -3,18 +3,28 @@
 {% block content %}
 <section class="grid two-up">
   <article class="card">
-    <h2>Runtime Settings</h2>
-    <dl class="stack">
-      {% for key, value in settings_map.items() %}
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Current Status</p>
+        <h2>Runtime summary</h2>
+      </div>
+    </div>
+    <p>OpenAI rewrite available for summary text only; score remains rule-based.</p>
+    <dl class="stack compact-list">
+      {% for key, value in status_sections.items() %}
       <div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>
       {% endfor %}
     </dl>
   </article>
 
   <article class="card">
-    <h2>Runtime State</h2>
-    <p>OpenAI rewrite available for summary text only; score remains rule-based.</p>
-    <dl class="stack">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Background Work</p>
+        <h2>System posture</h2>
+      </div>
+    </div>
+    <dl class="stack compact-list">
       <div><dt>Backlog</dt><dd>{{ broker_snapshot.backlog_size }}</dd></div>
       <div><dt>Oldest queued age</dt><dd>{{ broker_snapshot.oldest_queued_age_seconds }}s</dd></div>
       <div><dt>Recent 403</dt><dd>{{ broker_snapshot.recent_403_count }}</dd></div>
@@ -27,5 +37,30 @@
       {% endfor %}
     </dl>
   </article>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Technical Reference</p>
+      <h2>Detailed configuration</h2>
+    </div>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Setting</th>
+        <th>Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for key, value in settings_map.items() %}
+      <tr>
+        <td>{{ key }}</td>
+        <td>{{ value }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </section>
 {% endblock %}

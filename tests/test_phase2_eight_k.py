@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -165,6 +166,38 @@ def test_submissions_filters_only_8k():
     assert len(filings) == 1
     assert filings[0].form_type == "8-K"
     assert filings[0].accession_number == "0000320193-26-000100"
+
+
+def test_submissions_accepts_iso_and_legacy_acceptance_timestamps():
+    payload = {
+        "name": "Apple Inc.",
+        "tickers": ["AAPL"],
+        "filings": {
+            "recent": {
+                "form": ["8-K", "8-K"],
+                "accessionNumber": [
+                    "0000320193-26-000100",
+                    "0000320193-26-000101",
+                ],
+                "filingDate": ["2026-03-25", "2026-03-26"],
+                "acceptanceDateTime": [
+                    "2026-03-26T19:43:19.000Z",
+                    "20260325100500",
+                ],
+                "primaryDocument": [
+                    "aapl-20260325x8k402.htm",
+                    "aapl-20260326x8k801.htm",
+                ],
+                "items": ["4.02,9.01", "8.01"],
+            }
+        },
+    }
+
+    filings = parse_recent_8k_filings(payload, issuer_cik=AAPL_CIK)
+
+    assert len(filings) == 2
+    assert filings[0].accepted_at == datetime(2026, 3, 26, 19, 43, 19, tzinfo=UTC)
+    assert filings[1].accepted_at == datetime(2026, 3, 25, 10, 5, 0, tzinfo=UTC)
 
 
 def test_parser_and_scorer_cover_negative_and_positive_fixtures():

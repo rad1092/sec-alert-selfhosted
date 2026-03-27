@@ -1,133 +1,187 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="grid">
-  <article class="card">
-    <h2>Watchlist</h2>
+<section class="grid dashboard-stats">
+  <article class="card stat-card">
+    <p class="eyebrow">Watching</p>
     <p class="metric">{{ watchlist_count }}</p>
+    <p class="muted">Companies currently on your watchlist.</p>
   </article>
+  <article class="card stat-card">
+    <p class="eyebrow">Recent Signals</p>
+    <p class="metric">{{ visible_signal_rows | length }}</p>
+    <p class="muted">Signals in the current inbox view.</p>
+  </article>
+  <article class="card stat-card">
+    <p class="eyebrow">Last Check</p>
+    <p class="metric metric-copy">{{ latest_completed_run.finished_at_relative if latest_completed_run else "Not yet" }}</p>
+    <p class="muted">
+      {{ latest_completed_run.label if latest_completed_run else "No completed checks yet." }}
+    </p>
+  </article>
+  <article class="card stat-card">
+    <p class="eyebrow">Notifications</p>
+    <p class="metric">{{ configured_destinations }}/{{ enabled_destinations }}</p>
+    <p class="muted">Configured enabled channels.</p>
+  </article>
+</section>
+
+{% if no_external_notifications %}
+<section class="flash flash-warning">
+  Signals are being created locally, but no external notification channel is configured.
+  <a href="/destinations">Review notifications</a>.
+</section>
+{% endif %}
+
+{% if zero_state == "no_watchlist" %}
+<section class="card hero-card">
+  <h2>Start with one ticker</h2>
+  <p>Add a company to your watchlist first. Once a ticker is enabled, this app can pull 8-K and Form 4 filings into your local inbox.</p>
+  <p class="muted">A newly enabled watchlist entry automatically queues a 30-day catch-up backfill.</p>
+  <p><a href="/watchlist">Open watchlist setup</a></p>
+</section>
+{% elif zero_state == "waiting_for_first_signal" %}
+<section class="card hero-card">
+  <h2>Your watchlist is ready</h2>
+  <p>No filings have been stored yet. Run a manual 8-K or Form 4 check to pull the first signal into the inbox.</p>
+  <p class="muted">Signals appear here first, even if you have not configured Slack, webhook, or email delivery yet.</p>
+</section>
+{% elif zero_state == "waiting_with_activity" %}
+<section class="card hero-card">
+  <h2>Background work is underway</h2>
+  <p>No filings are visible yet, but the app has recent runs or issues recorded. Check the current issues summary below, or open Advanced for repair and runtime details.</p>
+  <p><a href="/advanced">Open advanced status</a></p>
+</section>
+{% endif %}
+
+<section class="grid two-up">
   <article class="card">
-    <h2>Alerts</h2>
-    <p class="metric">{{ alerts_count }}</p>
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Next Step</p>
+        <h2>Pull new signals</h2>
+      </div>
+      <p class="muted">Manual actions are safe to use even when automatic polling is off.</p>
+    </div>
+    <div class="action-stack">
+      <form method="post" action="/actions/ingest-now">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit">Run 8-K Check</button>
+      </form>
+      <form method="post" action="/actions/ingest-form4-now">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit">Run Form 4 Check</button>
+      </form>
+      <form method="post" action="/actions/repair-now">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="secondary">Run Repair Now</button>
+      </form>
+    </div>
+    <dl class="stack compact-list">
+      <div><dt>Collection mode</dt><dd>{{ scheduler_mode }}</dd></div>
+      <div><dt>Background work</dt><dd>{{ "Active" if background_work_active else "Idle" }}</dd></div>
+      <div><dt>Worker ready</dt><dd>{{ "Yes" if worker_snapshot.started else "No" }}</dd></div>
+    </dl>
   </article>
+
   <article class="card">
-    <h2>Errors</h2>
-    <p class="metric">{{ errors_count }}</p>
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Current Issues</p>
+        <h2>What is blocking right now</h2>
+      </div>
+      <a href="/errors">View all issues</a>
+    </div>
+    {% if recent_error_rows %}
+    <div class="stack issue-stack">
+      {% for error in recent_error_rows %}
+      <article class="issue-item">
+        <strong>{{ error.title }}</strong>
+        <p>{{ error.help_text }}</p>
+        <p class="muted">{{ error.source_label }} · {{ error.created_at_display }}</p>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p>No blocking issues recorded in the latest runs.</p>
+    {% endif %}
   </article>
-  <article class="card">
-    <h2>Destinations</h2>
-    <p class="metric">{{ destinations_count }}</p>
-  </article>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Latest Signals</p>
+      <h2>What likely needs review</h2>
+    </div>
+    <a href="/alerts">View all signals</a>
+  </div>
+  {% if hidden_historical_count %}
+  <p class="muted">Historical catch-up results are hidden from this inbox by default. <a href="/alerts?historical=show">Show {{ hidden_historical_count }} hidden historical signal{% if hidden_historical_count != 1 %}s{% endif %}</a>.</p>
+  {% endif %}
+  {% if visible_signal_rows %}
+  <div class="signal-list">
+    {% for signal in visible_signal_rows %}
+    <article class="signal-card">
+      <div class="signal-card-head">
+        <div>
+          <p class="signal-ticker">{{ signal.ticker }}</p>
+          <p class="muted">{{ signal.form_type }} · filed {{ signal.filed_date_display }}</p>
+        </div>
+        <div class="signal-badges">
+          <span class="pill pill-{{ signal.direction }}">{{ signal.direction_label }}</span>
+          <span class="pill pill-subtle">{{ signal.confidence }}</span>
+        </div>
+      </div>
+      <h3><a href="/filings/{{ signal.filing_id }}">{{ signal.headline }}</a></h3>
+      <p class="muted">Created {{ signal.created_at_display }} · {{ signal.delivery_label }}</p>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p>No current inbox signals yet.</p>
+  {% endif %}
 </section>
 
 <section class="grid two-up">
   <article class="card">
-    <h2>Actions</h2>
-    <form method="post" action="/actions/ingest-now" class="stack">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit">Run 8-K Ingest Now</button>
-    </form>
-    <form method="post" action="/actions/ingest-form4-now" class="stack">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit">Run Form 4 Ingest Now</button>
-    </form>
-    <form method="post" action="/actions/repair-now" class="stack">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit" class="secondary">Run Repair Now</button>
-    </form>
-    <p class="muted">
-      Live polling and nightly repair are scheduler-driven only when
-      <code>SCHEDULER_ENABLED=true</code>. Manual ingest and repair controls stay available
-      for local ops and testing.
-    </p>
-    <dl class="stack">
-      <div><dt>Worker started</dt><dd>{{ worker_snapshot.started }}</dd></div>
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Recent Checks</p>
+        <h2>Latest pipeline activity</h2>
+      </div>
+      <a href="/advanced">Advanced details</a>
+    </div>
+    {% if recent_run_rows %}
+    <div class="stack run-stack">
+      {% for run in recent_run_rows %}
+      <article class="issue-item">
+        <strong>{{ run.label }}</strong>
+        <p>{{ run.status }} · {{ run.finished_at_relative }}</p>
+        <p class="muted">{{ run.note }}</p>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p>No checks have been recorded yet.</p>
+    {% endif %}
+  </article>
+
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">System Status</p>
+        <h2>Operator signals</h2>
+      </div>
+      <a href="/advanced">Open advanced</a>
+    </div>
+    <dl class="stack compact-list">
+      <div><dt>Broker backlog</dt><dd>{{ broker_snapshot.backlog_size }}</dd></div>
+      <div><dt>P1 / P2 / P3</dt><dd>{{ broker_snapshot.queued_by_priority.P1 }} / {{ broker_snapshot.queued_by_priority.P2 }} / {{ broker_snapshot.queued_by_priority.P3 }}</dd></div>
       <div><dt>Worker idle</dt><dd>{{ worker_snapshot.idle }}</dd></div>
       <div><dt>Active job</dt><dd>{{ worker_snapshot.active_job_key or "None" }}</dd></div>
+      <div><dt>Scheduler</dt><dd>{{ scheduler_mode }}</dd></div>
     </dl>
-  </article>
-
-  <article class="card">
-    <h2>Broker Snapshot</h2>
-    <dl class="stack">
-      <div><dt>Backlog</dt><dd>{{ broker_snapshot.backlog_size }}</dd></div>
-      <div><dt>Oldest queued age</dt><dd>{{ broker_snapshot.oldest_queued_age_seconds }}s</dd></div>
-      <div><dt>P1 jobs</dt><dd>{{ broker_snapshot.queued_by_priority.P1 }}</dd></div>
-      <div><dt>P2 jobs</dt><dd>{{ broker_snapshot.queued_by_priority.P2 }}</dd></div>
-      <div><dt>P3 jobs</dt><dd>{{ broker_snapshot.queued_by_priority.P3 }}</dd></div>
-      <div><dt>Recent 403</dt><dd>{{ broker_snapshot.recent_403_count }}</dd></div>
-      <div><dt>Recent 429</dt><dd>{{ broker_snapshot.recent_429_count }}</dd></div>
-    </dl>
-  </article>
-
-  <article class="card">
-    <h2>Scheduler Snapshot</h2>
-    <dl class="stack">
-      <div><dt>Enabled</dt><dd>{{ scheduler_snapshot.enabled }}</dd></div>
-      <div><dt>Started</dt><dd>{{ scheduler_snapshot.started }}</dd></div>
-      <div><dt>8-K enqueue</dt><dd>{{ scheduler_snapshot.last_enqueued_at.get("scheduler-live-8k") or "Not yet" }}</dd></div>
-      <div><dt>Form 4 enqueue</dt><dd>{{ scheduler_snapshot.last_enqueued_at.get("scheduler-live-form4") or "Not yet" }}</dd></div>
-      <div><dt>Repair enqueue</dt><dd>{{ scheduler_snapshot.last_enqueued_at.get("scheduler-repair-recent") or "Not yet" }}</dd></div>
-      {% for job in scheduler_snapshot.jobs %}
-      <div><dt>{{ job.id }}</dt><dd>{{ job.next_run_time or "Not scheduled" }}</dd></div>
-      {% endfor %}
-    </dl>
-  </article>
-</section>
-
-<section class="grid two-up">
-  <article class="card">
-    <h2>Recent Filings</h2>
-    {% if recent_filings %}
-    <table>
-      <thead>
-        <tr>
-          <th>Accession</th>
-          <th>Form</th>
-          <th>Issuer</th>
-          <th>Score</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for filing in recent_filings %}
-        <tr>
-          <td><a href="/filings/{{ filing.id }}">{{ filing.accession_number }}</a></td>
-          <td>{{ filing.form_type }}</td>
-          <td>{{ filing.issuer_ticker or filing.issuer_name or "-" }}</td>
-          <td>{{ filing.score if filing.score is not none else "-" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p>No filings processed yet.</p>
-    {% endif %}
-  </article>
-
-  <article class="card">
-    <h2>Recent Ingest Runs</h2>
-    {% if recent_runs %}
-    <table>
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Status</th>
-          <th>Triggered By</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for run in recent_runs %}
-        <tr>
-          <td>{{ run.id }}</td>
-          <td>{{ run.status }}</td>
-          <td>{{ run.triggered_by }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p>No ingest runs yet.</p>
-    {% endif %}
   </article>
 </section>
 {% endblock %}

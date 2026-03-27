@@ -40,9 +40,21 @@ def pop_flashes(request: Request) -> list[dict[str, str]]:
     return messages
 
 
+def _current_section(path: str) -> str:
+    if path.startswith("/watchlist"):
+        return "watchlist"
+    if path.startswith("/destinations"):
+        return "notifications"
+    if path.startswith("/advanced") or path.startswith("/errors") or path.startswith("/settings"):
+        return "advanced"
+    return "inbox"
+
+
 def template_defaults(request: Request, **context: Any) -> dict[str, Any]:
     return {
         "csrf_token": ensure_csrf_token(request),
         "flash_messages": pop_flashes(request),
+        "current_path": request.url.path,
+        "current_section": _current_section(request.url.path),
         **context,
     }

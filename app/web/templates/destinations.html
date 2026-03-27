@@ -1,40 +1,26 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="grid two-up">
-  <article class="card">
-    <h2>Configured Destinations</h2>
-    {% if destinations %}
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Enabled</th>
-          <th>Config</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for destination in destinations %}
-        <tr>
-          <td>{{ destination.name }}</td>
-          <td>{{ destination.destination_type }}</td>
-          <td>{{ destination.enabled }}</td>
-          <td>{{ destination.config_label or "-" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p>No destinations saved yet.</p>
-    {% endif %}
-  </article>
+<section class="card hero-card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Notifications</p>
+      <h2>Where signals go after they enter the inbox</h2>
+    </div>
+  </div>
+  <p>Slack, webhook, and email are optional. The inbox keeps working even if no external channel is configured.</p>
+  <p class="muted">Slack remains the reference delivery path. Webhook and SMTP follow the same delivery-attempt logging rules.</p>
 </section>
 
 <section class="grid two-up">
   {% for card in destination_cards %}
   <article class="card">
-    <h2>{{ card.title }}</h2>
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Channel</p>
+        <h2>{{ card.title }}</h2>
+      </div>
+    </div>
     <form method="post" action="/destinations/{{ card.channel }}" class="stack">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>
@@ -70,9 +56,14 @@
 </section>
 
 <section class="card">
-  <h2>Recent Delivery Attempts</h2>
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Delivery History</p>
+      <h2>Recent Delivery Attempts</h2>
+    </div>
+  </div>
   {% if recent_attempts %}
-  <table>
+  <table class="data-table">
     <thead>
       <tr>
         <th>Destination</th>

@@ -1,32 +1,41 @@
 {% extends "base.html" %}
 
 {% block content %}
+<section class="card hero-card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Issues</p>
+      <h2>Recent problems the app recorded</h2>
+    </div>
+  </div>
+  <p>This page is for operator follow-up. A listed issue does not always mean the whole app is broken; often it only affects one filing or one repair cycle.</p>
+</section>
+
 <section class="card">
-  <h2>Recent Errors</h2>
   {% if errors %}
-  <table>
-    <thead>
-      <tr>
-        <th>Stage</th>
-        <th>Source</th>
-        <th>Error</th>
-        <th>Retryable</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for error in errors %}
-      <tr>
-        <td>{{ error.stage }}</td>
-        <td>{{ error.source_name or "-" }}</td>
-        <td>{{ error.message }}</td>
-        <td>{{ error.is_retryable }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="stack issue-stack">
+    {% for error in errors %}
+    <article class="issue-item">
+      <div class="section-header">
+        <div>
+          <h3>{{ error.title }}</h3>
+          <p class="muted">{{ error.source_label }} · {{ error.created_at_display }}</p>
+        </div>
+        <span class="pill pill-{% if error.retryable %}neutral{% else %}subtle{% endif %}">
+          {{ "Retryable" if error.retryable else "Needs review" }}
+        </span>
+      </div>
+      <p>{{ error.help_text }}</p>
+      <details>
+        <summary>Raw error details</summary>
+        <p><code>{{ error.stage }}</code></p>
+        <p>{{ error.detail }}</p>
+      </details>
+    </article>
+    {% endfor %}
+  </div>
   {% else %}
-  <p>No errors recorded.</p>
+  <p>No issues recorded.</p>
   {% endif %}
 </section>
 {% endblock %}
-

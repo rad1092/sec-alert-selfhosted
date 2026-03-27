@@ -536,24 +536,55 @@ def parse_form4_detail_page(detail_index_html: str, *, detail_url: str) -> Form4
 def locate_ownership_xml(detail_metadata: Form4DetailMetadata) -> str | None:
     best_match: str | None = None
     for document in detail_metadata.documents:
-        if not document.filename.lower().endswith(".xml"):
-            continue
-        if document.document_type.upper() in XML_TYPE_NAMES:
+        if (
+            document.document_type.upper() in XML_TYPE_NAMES
+            and document.filename.lower().endswith(".xml")
+        ):
             return document.url
-        candidate_text = f"{document.filename} {document.description}".lower()
+    for document in detail_metadata.documents:
+        if (
+            document.document_type.upper() in XML_TYPE_NAMES
+            and document.url.lower().endswith(".xml")
+        ):
+            return document.url
+    for document in detail_metadata.documents:
+        if not _document_is_xml(document):
+            continue
+        candidate_text = _document_candidate_text(document)
         if "ownership" in candidate_text or "xml" in candidate_text or "data" in candidate_text:
             best_match = document.url
     if best_match is not None:
         return best_match
     for document in detail_metadata.documents:
-        if document.filename.lower().endswith(".xml"):
+        if _document_is_xml(document):
             return document.url
     return None
 
 
 def _parse_documents(soup: BeautifulSoup, detail_url: str) -> list[DetailDocument]:
+    for table in soup.find_all("table"):
+        rows = table.find_all("tr")
+        header_map = _header_map_for_document_table(rows)
+        if header_map is None:
+            continue
+        documents = _parse_document_rows(rows, detail_url=detail_url, header_map=header_map)
+        if documents:
+            return documents
+    return _parse_document_rows(
+        soup.find_all("tr"),
+        detail_url=detail_url,
+        header_map=None,
+    )
+
+
+def _parse_document_rows(
+    rows,
+    *,
+    detail_url: str,
+    header_map: dict[str, int] | None,
+) -> list[DetailDocument]:
     documents: list[DetailDocument] = []
-    for row in soup.find_all("tr"):
+    for row in rows:
         link = row.find("a", href=True)
         if link is None:
             continue
@@ -563,9 +594,16 @@ def _parse_documents(soup: BeautifulSoup, detail_url: str) -> list[DetailDocumen
         cells = [cell.get_text(" ", strip=True) for cell in row.find_all(["td", "th"])]
         if len(cells) < 2:
             continue
-        filename = cells[1] if len(cells) > 1 else link.get_text(" ", strip=True)
-        description = cells[2] if len(cells) > 2 else ""
-        document_type = cells[3] if len(cells) > 3 else ""
+        if header_map is None:
+            filename = cells[1] if len(cells) > 1 else link.get_text(" ", strip=True)
+            description = cells[2] if len(cells) > 2 else ""
+            document_type = cells[3] if len(cells) > 3 else ""
+        else:
+            filename = _cell_value(cells, header_map.get("document")) or link.get_text(
+                " ", strip=True
+            )
+            description = _cell_value(cells, header_map.get("description")) or ""
+            document_type = _cell_value(cells, header_map.get("type")) or ""
         documents.append(
             DetailDocument(
                 url=urljoin(detail_url, href),
@@ -575,6 +613,40 @@ def _parse_documents(soup: BeautifulSoup, detail_url: str) -> list[DetailDocumen
             )
         )
     return documents
+
+
+def _header_map_for_document_table(rows) -> dict[str, int] | None:
+    for row in rows:
+        headers = row.find_all("th")
+        if not headers:
+            continue
+        normalized_headers = [_normalize_header(cell.get_text(" ", strip=True)) for cell in headers]
+        if not {"document", "description", "type"}.issubset(set(normalized_headers)):
+            continue
+        return {header: index for index, header in enumerate(normalized_headers)}
+    return None
+
+
+def _normalize_header(value: str) -> str:
+    normalized = " ".join(value.strip().lower().split())
+    if normalized in {"document/format files", "document format files"}:
+        return "document"
+    return normalized
+
+
+def _cell_value(cells: list[str], index: int | None) -> str | None:
+    if index is None or index >= len(cells):
+        return None
+    value = cells[index].strip()
+    return value or None
+
+
+def _document_is_xml(document: DetailDocument) -> bool:
+    return document.url.lower().endswith(".xml") or document.filename.lower().endswith(".xml")
+
+
+def _document_candidate_text(document: DetailDocument) -> str:
+    return f"{document.filename} {document.description} {document.url}".lower()
 
 
 def _extract_info_map(soup: BeautifulSoup) -> dict[str, str]:

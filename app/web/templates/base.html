@@ -3,22 +3,21 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ page_title }} · SEC Alert</title>
+    <title>{{ page_title }} | SEC Alert Self-Hosted</title>
     <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
   </head>
   <body>
     <header class="site-header">
-      <div>
+      <div class="site-brand">
         <p class="eyebrow">SEC Alert Self-Hosted</p>
         <h1>{{ page_title }}</h1>
+        <p class="hero-copy">Rule-based SEC signal monitoring for a focused, self-hosted watchlist.</p>
       </div>
       <nav class="site-nav">
-        <a href="/">Dashboard</a>
-        <a href="/watchlist">Watchlist</a>
-        <a href="/destinations">Destinations</a>
-        <a href="/alerts">Alerts</a>
-        <a href="/errors">Errors</a>
-        <a href="/settings">Settings</a>
+        <a href="/" class="{% if current_section == 'inbox' %}active{% endif %}">Inbox</a>
+        <a href="/watchlist" class="{% if current_section == 'watchlist' %}active{% endif %}">Watchlist</a>
+        <a href="/destinations" class="{% if current_section == 'notifications' %}active{% endif %}">Notifications</a>
+        <a href="/advanced" class="{% if current_section == 'advanced' %}active{% endif %}">Advanced</a>
       </nav>
     </header>
 
@@ -27,6 +26,19 @@
         <strong>Near-real-time:</strong>
         SEC filings usually appear within a few minutes, but visibility can lag under load.
       </section>
+
+      {% if current_section == "advanced" %}
+      <nav class="subnav">
+        <a href="/advanced" class="{% if current_path == '/advanced' %}active{% endif %}">Advanced Home</a>
+        <a href="/errors" class="{% if current_path == '/errors' %}active{% endif %}">Issues</a>
+        <a href="/settings" class="{% if current_path == '/settings' %}active{% endif %}">Settings</a>
+      </nav>
+      {% elif current_path == "/alerts" %}
+      <nav class="subnav">
+        <a href="/" class="{% if current_path != '/alerts' %}active{% endif %}">Inbox</a>
+        <a href="/alerts" class="active">All Signals</a>
+      </nav>
+      {% endif %}
 
       {% for flash in flash_messages %}
       <section class="flash flash-{{ flash.level }}">{{ flash.message }}</section>

@@ -3,55 +3,72 @@
 {% block content %}
 <section class="grid two-up">
   <article class="card">
-    <h2>Add Issuer</h2>
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Watchlist Setup</p>
+        <h2>Add by ticker</h2>
+      </div>
+    </div>
     <form method="post" action="/watchlist" class="stack">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>
         Ticker
-        <input type="text" name="ticker" required>
-      </label>
-      <label>
-        Issuer CIK
-        <input type="text" name="issuer_cik">
-      </label>
-      <label>
-        Manual CIK Override
-        <input type="text" name="manual_cik_override">
-      </label>
-      <label>
-        Issuer Name
-        <input type="text" name="issuer_name">
+        <input type="text" name="ticker" required placeholder="AAPL">
       </label>
       <label class="checkbox">
         <input type="checkbox" name="enabled" checked>
-        Enabled
+        Start watching immediately
       </label>
+      <details>
+        <summary>Advanced issuer settings</summary>
+        <div class="stack details-stack">
+          <label>
+            Issuer CIK
+            <input type="text" name="issuer_cik">
+          </label>
+          <label>
+            Manual CIK Override
+            <input type="text" name="manual_cik_override">
+          </label>
+          <label>
+            Issuer Name
+            <input type="text" name="issuer_name">
+          </label>
+        </div>
+      </details>
       <button type="submit">Add To Watchlist</button>
     </form>
     <p class="muted">Validated for {{ watchlist_soft_cap }} issuers, hard cap {{ watchlist_hard_cap }}.</p>
-    <p class="muted">Manual CIK override always wins over stored issuer CIK and ticker resolution. Creating or re-enabling an entry queues a 30-day background backfill.</p>
+    <p class="muted">Creating or re-enabling an entry queues a 30-day historical catch-up in the background.</p>
   </article>
 
   <article class="card">
-    <h2>Entries</h2>
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Coverage</p>
+        <h2>Your companies</h2>
+      </div>
+    </div>
     {% if entries %}
-    <table>
+    <table class="data-table">
       <thead>
         <tr>
           <th>Ticker</th>
-          <th>Issuer CIK</th>
-          <th>Manual Override</th>
+          <th>Issuer</th>
           <th>Status</th>
+          <th>Last filing date</th>
+          <th>Coverage hint</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
         {% for entry in entries %}
         <tr>
-          <td>{{ entry.ticker }}</td>
-          <td>{{ entry.issuer_cik or "-" }}</td>
-          <td>{{ entry.manual_cik_override or "-" }}</td>
-          <td>{{ "Enabled" if entry.enabled else "Paused" }}</td>
+          <td><strong>{{ entry.ticker }}</strong></td>
+          <td>{{ entry.issuer_display }}</td>
+          <td>{{ "Watching" if entry.enabled else "Paused" }}</td>
+          <td>{{ entry.last_filing_date }}</td>
+          <td>{{ entry.hint_summary }}</td>
           <td class="actions">
             <form method="post" action="/watchlist/{{ entry.id }}/toggle">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -71,8 +88,8 @@
       </tbody>
     </table>
     {% else %}
-    <p>No issuers added yet.</p>
-    {% endif %}
+    <p>No companies added yet.</p>
+  {% endif %}
   </article>
 </section>
 {% endblock %}

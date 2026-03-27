@@ -37,7 +37,7 @@ def filing_detail(
     return render_template(
         request,
         "filing_detail.html",
-        page_title=f"Filing {filing.accession_number}",
+        page_title=f"{filing.issuer_ticker or filing.issuer_name or 'Filing'} {filing.form_type}",
         filing=filing,
         effective_summary=effective_summary_for_filing(filing),
         alert=alert,

@@ -1,91 +1,132 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="grid two-up">
-  <article class="card">
-    <h2>Filing Summary</h2>
-    <dl class="stack">
-      <div><dt>Accession</dt><dd>{{ filing.accession_number }}</dd></div>
-      <div><dt>Form</dt><dd>{{ filing.form_type }}</dd></div>
-      <div><dt>Issuer</dt><dd>{{ filing.issuer_ticker or filing.issuer_name or "-" }}</dd></div>
-      <div><dt>Parser status</dt><dd>{{ filing.parser_status }}</dd></div>
-      <div><dt>Detail index</dt><dd>{% if filing.detail_url %}<a href="{{ filing.detail_url }}">open</a>{% else %}-{% endif %}</dd></div>
-      <div><dt>Primary doc</dt><dd>{% if filing.source_url %}<a href="{{ filing.source_url }}">open</a>{% else %}-{% endif %}</dd></div>
-    </dl>
-    <h3>Signal</h3>
-    <dl class="stack">
-      <div><dt>Score</dt><dd>{{ filing.score if filing.score is not none else "-" }}</dd></div>
-      <div><dt>Confidence</dt><dd>{{ filing.confidence or "-" }}</dd></div>
-      <div><dt>Reasons</dt><dd>{{ filing.reasons | join("; ") if filing.reasons else "-" }}</dd></div>
-    </dl>
-    <h3>Summary</h3>
-    <dl class="stack">
-      <div><dt>Summary source</dt><dd>{{ effective_summary.source }}</dd></div>
-      <div><dt>Headline</dt><dd>{{ effective_summary.headline or "-" }}</dd></div>
-      <div><dt>Context</dt><dd>{{ effective_summary.context or "-" }}</dd></div>
-      {% if effective_summary.category %}
-      <div><dt>Category</dt><dd>{{ effective_summary.category }}</dd></div>
-      {% endif %}
-    </dl>
+<section class="card hero-card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Signal Review</p>
+      <h2>{{ filing.issuer_ticker or filing.issuer_name or "-" }} · {{ filing.form_type }}</h2>
+    </div>
     <form method="post" action="/filings/{{ filing.id }}/reparse" class="inline-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit">Reparse Filing</button>
     </form>
+  </div>
+  <dl class="stack compact-list detail-headline-meta">
+    <div><dt>Filed date</dt><dd>{{ filing.filed_date or "-" }}</dd></div>
+    <div><dt>Accession</dt><dd>{{ filing.accession_number }}</dd></div>
+    <div><dt>Summary source</dt><dd>{{ effective_summary.source }}</dd></div>
+  </dl>
+  <h3 class="hero-headline">{{ effective_summary.headline or "No summary headline yet." }}</h3>
+  <p class="lead-copy">{{ effective_summary.context or "No summary context yet." }}</p>
+  <p class="muted">OpenAI is presentation-only here. Score, confidence, reasons, and source links remain rule-based and authoritative.</p>
+  {% if effective_summary.category %}
+  <p><span class="pill pill-subtle">{{ effective_summary.category }}</span></p>
+  {% endif %}
+</section>
+
+<section class="grid two-up">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Signal</p>
+        <h2>Why this was flagged</h2>
+      </div>
+    </div>
+    <dl class="stack compact-list">
+      <div><dt>Score</dt><dd>{{ filing.score if filing.score is not none else "-" }}</dd></div>
+      <div><dt>Confidence</dt><dd>{{ filing.confidence or "-" }}</dd></div>
+      <div><dt>Reasons</dt><dd>{{ filing.reasons | join("; ") if filing.reasons else "-" }}</dd></div>
+    </dl>
   </article>
 
   <article class="card">
-    <h2>Parsed Payload</h2>
-    {% if filing.normalized_payload %}
-    <dl class="stack">
-      {% if filing.form_type in ["4", "4/A"] %}
-      <div><dt>Reporting owners</dt><dd>{{ filing.reporter_names | join(", ") if filing.reporter_names else "-" }}</dd></div>
-      <div><dt>Owner count</dt><dd>{{ filing.normalized_payload.owner_count or "-" }}</dd></div>
-      <div><dt>10b5-1</dt><dd>{{ filing.normalized_payload.tenb5_1.checkbox if filing.normalized_payload.tenb5_1 is defined else "-" }}</dd></div>
-      {% else %}
-      <div><dt>Items</dt><dd>{{ filing.normalized_payload.item_numbers | join(", ") if filing.normalized_payload.item_numbers else "-" }}</dd></div>
-      <div><dt>Exhibits</dt><dd>{{ filing.normalized_payload.exhibit_titles | join(", ") if filing.normalized_payload.exhibit_titles else "-" }}</dd></div>
-      {% endif %}
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Source Links</p>
+        <h2>Verify against the SEC</h2>
+      </div>
+    </div>
+    <dl class="stack compact-list">
+      <div><dt>Issuer</dt><dd>{{ filing.issuer_name or filing.issuer_ticker or "-" }}</dd></div>
+      <div><dt>Detail index</dt><dd>{% if filing.detail_url %}<a href="{{ filing.detail_url }}">Open SEC detail page</a>{% else %}-{% endif %}</dd></div>
+      <div><dt>Primary filing</dt><dd>{% if filing.source_url %}<a href="{{ filing.source_url }}">Open source document</a>{% else %}-{% endif %}</dd></div>
+      <div><dt>Alert status</dt><dd>{{ alert.status if alert else "No alert row yet" }}</dd></div>
     </dl>
-    {% if filing.form_type not in ["4", "4/A"] %}
-    <p>{{ filing.normalized_payload.cleaned_body or "-" }}</p>
-    {% endif %}
-    <pre>{{ filing.normalized_payload | tojson(indent=2) }}</pre>
-    {% else %}
-    <p>No parsed payload stored yet.</p>
-    {% endif %}
   </article>
 </section>
 
 <section class="card">
-  <h2>Alert Delivery</h2>
-  {% if alert %}
-  <p>Status: {{ alert.status }}</p>
-  {% if attempts %}
-  <table>
-    <thead>
-      <tr>
-        <th>Channel</th>
-        <th>Status</th>
-        <th>Response</th>
-        <th>Retryable</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for attempt in attempts %}
-      <tr>
-        <td>{{ attempt.channel }}</td>
-        <td>{{ attempt.status }}</td>
-        <td>{{ attempt.response_code or attempt.error_message or "-" }}</td>
-        <td>{{ attempt.retryable }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p>No delivery attempts recorded.</p>
-  {% endif %}
-  {% else %}
-  <p>No alert has been created for this filing yet.</p>
-  {% endif %}
+  <details>
+    <summary>Advanced details</summary>
+    <div class="advanced-grid">
+      <article>
+        <h3>Parser and scoring state</h3>
+        <dl class="stack compact-list">
+          <div><dt>Parser status</dt><dd>{{ filing.parser_status }}</dd></div>
+          <div><dt>Scoring status</dt><dd>{{ filing.scoring_status }}</dd></div>
+          <div><dt>Summarization status</dt><dd>{{ filing.summarization_status }}</dd></div>
+          {% if effective_summary.category %}
+          <div><dt>Category</dt><dd>{{ effective_summary.category }}</dd></div>
+          {% endif %}
+        </dl>
+      </article>
+
+      <article>
+        <h3>Alert delivery</h3>
+        {% if alert %}
+        <p>Status: {{ alert.status }}</p>
+        {% if attempts %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Channel</th>
+              <th>Status</th>
+              <th>Response</th>
+              <th>Retryable</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for attempt in attempts %}
+            <tr>
+              <td>{{ attempt.channel }}</td>
+              <td>{{ attempt.status }}</td>
+              <td>{{ attempt.response_code or attempt.error_message or "-" }}</td>
+              <td>{{ attempt.retryable }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p>No delivery attempts recorded.</p>
+        {% endif %}
+        {% else %}
+        <p>No alert has been created for this filing yet.</p>
+        {% endif %}
+      </article>
+    </div>
+
+    <article class="payload-panel">
+      <h3>Parsed Payload</h3>
+      {% if filing.normalized_payload %}
+      <dl class="stack compact-list">
+        {% if filing.form_type in ["4", "4/A"] %}
+        <div><dt>Reporting owners</dt><dd>{{ filing.reporter_names | join(", ") if filing.reporter_names else "-" }}</dd></div>
+        <div><dt>Owner count</dt><dd>{{ filing.normalized_payload.owner_count or "-" }}</dd></div>
+        <div><dt>10b5-1</dt><dd>{{ filing.normalized_payload.tenb5_1.checkbox if filing.normalized_payload.tenb5_1 is defined else "-" }}</dd></div>
+        {% else %}
+        <div><dt>Items</dt><dd>{{ filing.normalized_payload.item_numbers | join(", ") if filing.normalized_payload.item_numbers else "-" }}</dd></div>
+        <div><dt>Exhibits</dt><dd>{{ filing.normalized_payload.exhibit_titles | join(", ") if filing.normalized_payload.exhibit_titles else "-" }}</dd></div>
+        {% endif %}
+      </dl>
+      {% if filing.form_type not in ["4", "4/A"] and filing.normalized_payload.cleaned_body %}
+      <p class="muted payload-preview">{{ filing.normalized_payload.cleaned_body[:600] }}{% if filing.normalized_payload.cleaned_body|length > 600 %}…{% endif %}</p>
+      {% endif %}
+      <pre>{{ filing.normalized_payload | tojson(indent=2) }}</pre>
+      {% else %}
+      <p>No parsed payload stored yet.</p>
+      {% endif %}
+    </article>
+  </details>
 </section>
 {% endblock %}

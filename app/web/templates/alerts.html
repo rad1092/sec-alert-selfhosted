@@ -2,30 +2,95 @@
 
 {% block content %}
 <section class="card">
-  <h2>Recent Alerts</h2>
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">Signal Archive</p>
+      <h2>Filter what you want to review</h2>
+    </div>
+    <a href="/">Back to inbox</a>
+  </div>
+  <form method="get" action="/alerts" class="filter-bar">
+    <label>
+      Ticker
+      <input type="text" name="ticker" value="{{ filter_ticker }}" placeholder="AAPL">
+    </label>
+    <label>
+      Form
+      <input type="text" name="form" value="{{ filter_form }}" placeholder="8-K or 4">
+    </label>
+    <label>
+      Signal direction
+      <select name="direction">
+        <option value="" {% if not filter_direction %}selected{% endif %}>All</option>
+        <option value="negative" {% if filter_direction == "negative" %}selected{% endif %}>Negative</option>
+        <option value="positive" {% if filter_direction == "positive" %}selected{% endif %}>Positive</option>
+        <option value="neutral" {% if filter_direction == "neutral" %}selected{% endif %}>Neutral</option>
+      </select>
+    </label>
+    <label>
+      Historical
+      <select name="historical">
+        <option value="hide" {% if filter_historical != "show" %}selected{% endif %}>Hide older than 7 days</option>
+        <option value="show" {% if filter_historical == "show" %}selected{% endif %}>Show all</option>
+      </select>
+    </label>
+    <button type="submit">Apply filters</button>
+  </form>
+  {% if hidden_historical_count %}
+  <p class="muted">Hiding {{ hidden_historical_count }} older filing{% if hidden_historical_count != 1 %}s{% endif %}. Switch Historical to “Show all” to include them.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <div>
+      <p class="eyebrow">All Signals</p>
+      <h2>Triage list</h2>
+    </div>
+  </div>
   {% if alerts %}
-  <table>
+  <table class="data-table">
     <thead>
       <tr>
-        <th>ID</th>
-        <th>Status</th>
+        <th>Ticker</th>
+        <th>Form</th>
+        <th>Filed</th>
+        <th>Signal</th>
+        <th>Confidence</th>
         <th>Headline</th>
         <th>Created</th>
+        <th>Local status</th>
       </tr>
     </thead>
     <tbody>
       {% for alert in alerts %}
       <tr>
-        <td>{{ alert.id }}</td>
-        <td>{{ alert.status }}</td>
-        <td>{% if alert.filing_id %}<a href="/filings/{{ alert.filing_id }}">{{ alert.headline or "-" }}</a>{% else %}{{ alert.headline or "-" }}{% endif %}</td>
-        <td>{{ alert.created_at }}</td>
+        <td>
+          <strong>{{ alert.ticker }}</strong>
+          {% if alert.historical %}<span class="pill pill-subtle">Historical</span>{% endif %}
+        </td>
+        <td>{{ alert.form_type }}</td>
+        <td>{{ alert.filed_date_display }}</td>
+        <td>
+          <span class="pill pill-{{ alert.direction }}">{{ alert.direction_label }}</span>
+          <span class="muted">{{ alert.score_display }}</span>
+        </td>
+        <td>{{ alert.confidence }}</td>
+        <td>
+          {% if alert.filing_id %}
+          <a href="/filings/{{ alert.filing_id }}">{{ alert.headline }}</a>
+          {% else %}
+          {{ alert.headline }}
+          {% endif %}
+        </td>
+        <td>{{ alert.created_at_display }}</td>
+        <td>{{ alert.delivery_label }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <p>No alerts yet.</p>
+  <p>No signals match this filter set.</p>
   {% endif %}
 </section>
 {% endblock %}

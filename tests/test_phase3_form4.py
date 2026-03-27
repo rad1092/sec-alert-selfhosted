@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, date, datetime
 from pathlib import Path
 
+from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.db import open_session
 from app.main import create_app
-from app.models import Alert, DeliveryAttempt, Destination, Filing, WatchlistEntry
+from app.models import Alert, DeliveryAttempt, Destination, Filing, StageError, WatchlistEntry
 from app.services.scoring.form4 import Form4Scorer
 from app.services.sec.client import FixtureSecClient
-from app.services.sec.form4 import Form4Parser
+from app.services.sec.form4 import (
+    DetailDocument,
+    Form4DetailMetadata,
+    Form4Parser,
+    _parse_documents,
+    locate_ownership_xml,
+)
 from app.services.sec.latest_ownership import LATEST_OWNERSHIP_URL, parse_ownership_candidates
 from app.services.sec.resolver import COMPANY_TICKERS_URL
 from tests.conftest import extract_csrf_token
@@ -25,6 +33,18 @@ BUY_DETAIL_URL = (
 )
 BUY_XML_URL = (
     "https://www.sec.gov/Archives/edgar/data/320193/000032019326000200/form4-multi-buy.xml"
+)
+LIVE_XSL_DETAIL_URL = (
+    "https://www.sec.gov/Archives/edgar/data/320193/"
+    "000032019326000204/0000320193-26-000204-index.html"
+)
+LIVE_XSL_XML_URL = (
+    "https://www.sec.gov/Archives/edgar/data/320193/"
+    "000032019326000204/xslF345X05/wk-form4_1772053959.xml"
+)
+MISSING_XML_DETAIL_URL = (
+    "https://www.sec.gov/Archives/edgar/data/320193/"
+    "000032019326000205/0000320193-26-000205-index.html"
 )
 
 
@@ -91,6 +111,7 @@ def make_fixture_client(feed_case: str = "buy_multi_reporter") -> FixtureSecClie
         "mixed_m_f",
         "derivative_heavy",
         "tenb5_1_case",
+        "live_xsl_case",
     ):
         case_dir = FORM4_FIXTURES / case
         detail_url = _detail_url_for_case(case)
@@ -147,6 +168,142 @@ def test_ownership_feed_parser_recognizes_form4_candidates():
     )
     assert [candidate.form_type for candidate in candidates] == ["4", "5", "3"]
     assert candidates[0].accession_number == "0000320193-26-000200"
+
+
+def test_parse_documents_handles_live_and_legacy_detail_table_orders():
+    live_documents = _parse_documents(
+        BeautifulSoup(load_text("form4", "live_xsl_case", "detail-index.html"), "html.parser"),
+        LIVE_XSL_DETAIL_URL,
+    )
+    assert len(live_documents) == 1
+    assert live_documents[0].filename == "wk-form4_1772053959.html"
+    assert live_documents[0].description == "FORM 4"
+    assert live_documents[0].document_type == "4"
+    assert live_documents[0].url == LIVE_XSL_XML_URL
+
+    legacy_documents = _parse_documents(
+        BeautifulSoup(load_text("form4", "buy_multi_reporter", "detail-index.html"), "html.parser"),
+        BUY_DETAIL_URL,
+    )
+    assert len(legacy_documents) == 1
+    assert legacy_documents[0].filename == "form4-multi-buy.xml"
+    assert legacy_documents[0].description == "OWNERSHIP DOCUMENT"
+    assert legacy_documents[0].document_type == "4"
+
+
+def test_locate_ownership_xml_handles_live_href_direct_xml_and_ex99_fallback():
+    live_metadata = Form4DetailMetadata(
+        detail_url=LIVE_XSL_DETAIL_URL,
+        accession_number="0000320193-26-000204",
+        form_type="4",
+        filed_date=None,
+        accepted_at=None,
+        issuer_cik="0000320193",
+        issuer_name="Apple Inc.",
+        issuer_ticker="AAPL",
+        documents=_parse_documents(
+            BeautifulSoup(load_text("form4", "live_xsl_case", "detail-index.html"), "html.parser"),
+            LIVE_XSL_DETAIL_URL,
+        ),
+    )
+    assert locate_ownership_xml(live_metadata) == LIVE_XSL_XML_URL
+
+    direct_xml_metadata = Form4DetailMetadata(
+        detail_url=BUY_DETAIL_URL,
+        accession_number="0000320193-26-000200",
+        form_type="4",
+        filed_date=None,
+        accepted_at=None,
+        issuer_cik="0000320193",
+        issuer_name="Apple Inc.",
+        issuer_ticker="AAPL",
+        documents=_parse_documents(
+            BeautifulSoup(
+                load_text("form4", "buy_multi_reporter", "detail-index.html"),
+                "html.parser",
+            ),
+            BUY_DETAIL_URL,
+        ),
+    )
+    assert locate_ownership_xml(direct_xml_metadata) == BUY_XML_URL
+
+    prefer_raw_xml_metadata = Form4DetailMetadata(
+        detail_url=LIVE_XSL_DETAIL_URL,
+        accession_number="0001628280-26-011664",
+        form_type="4",
+        filed_date=None,
+        accepted_at=None,
+        issuer_cik="0001005229",
+        issuer_name="Acme United Corp.",
+        issuer_ticker="ACU",
+        documents=[
+            DetailDocument(
+                url=(
+                    "https://www.sec.gov/Archives/edgar/data/1005229/"
+                    "000162828026011664/xslF345X05/wk-form4_1772053936.xml"
+                ),
+                filename="wk-form4_1772053936.html",
+                description="FORM 4",
+                document_type="4",
+            ),
+            DetailDocument(
+                url=(
+                    "https://www.sec.gov/Archives/edgar/data/1005229/"
+                    "000162828026011664/wk-form4_1772053936.xml"
+                ),
+                filename="wk-form4_1772053936.xml",
+                description="FORM 4",
+                document_type="4",
+            ),
+        ],
+    )
+    assert (
+        locate_ownership_xml(prefer_raw_xml_metadata)
+        == "https://www.sec.gov/Archives/edgar/data/1005229/"
+        "000162828026011664/wk-form4_1772053936.xml"
+    )
+
+    ex99_metadata = Form4DetailMetadata(
+        detail_url=_detail_url_for_case("derivative_heavy"),
+        accession_number="0000789019-26-000210",
+        form_type="4",
+        filed_date=None,
+        accepted_at=None,
+        issuer_cik="0000789019",
+        issuer_name="Microsoft Corporation",
+        issuer_ticker="MSFT",
+        documents=_parse_documents(
+            BeautifulSoup(
+                load_text("form4", "derivative_heavy", "detail-index.html"),
+                "html.parser",
+            ),
+            _detail_url_for_case("derivative_heavy"),
+        ),
+    )
+    assert locate_ownership_xml(ex99_metadata) == _xml_url_for_case("derivative_heavy")
+
+    amended_metadata = Form4DetailMetadata(
+        detail_url="https://www.sec.gov/Archives/edgar/data/320193/test-amendment-index.html",
+        accession_number="0000320193-26-000299",
+        form_type="4/A",
+        filed_date=None,
+        accepted_at=None,
+        issuer_cik="0000320193",
+        issuer_name="Apple Inc.",
+        issuer_ticker="AAPL",
+        documents=[
+            DetailDocument(
+                url="https://www.sec.gov/Archives/edgar/data/320193/test-amendment.xml",
+                filename="test-amendment.xml",
+                description="FORM 4/A",
+                document_type="4/A",
+            )
+        ],
+    )
+    assert (
+        locate_ownership_xml(amended_metadata)
+        == "https://www.sec.gov/Archives/edgar/data/320193/test-amendment.xml"
+    )
 
 
 def test_form4_parser_and_scorer_cover_multi_reporter_sale_and_neutral_cases():
@@ -268,6 +425,37 @@ def test_form4_manual_ingest_end_to_end_and_idempotency(tmp_path: Path):
         assert BUY_XML_URL in fixture_sec_client.calls
 
 
+def test_form4_manual_ingest_succeeds_with_live_style_detail_fixture(tmp_path: Path):
+    client, fake_slack, fixture_sec_client = create_phase3_client(
+        tmp_path,
+        feed_case="live_xsl_case",
+    )
+    with client:
+        seed_watchlist_and_destination()
+
+        response = client.get("/")
+        csrf_token = extract_csrf_token(response.text)
+        run_response = client.post(
+            "/actions/ingest-form4-now",
+            data={"csrf_token": csrf_token},
+            follow_redirects=True,
+        )
+        assert run_response.status_code == 200
+        assert client.app.state.worker.wait_for_idle(timeout=5.0)
+
+        with open_session() as session:
+            filing = session.query(Filing).one()
+            assert filing.detail_url == LIVE_XSL_DETAIL_URL
+            assert filing.source_url == LIVE_XSL_XML_URL
+            assert filing.parser_status == "success"
+            assert filing.summary_headline is not None
+            assert filing.summary_context is not None
+
+        assert len(fake_slack.sent_payloads) == 1
+        assert LIVE_XSL_DETAIL_URL in fixture_sec_client.calls
+        assert LIVE_XSL_XML_URL in fixture_sec_client.calls
+
+
 def test_form4_reparse_updates_existing_filing_without_new_alert_or_delivery(tmp_path: Path):
     client, fake_slack, fixture_sec_client = create_phase3_client(tmp_path)
     with client:
@@ -311,6 +499,113 @@ def test_form4_reparse_updates_existing_filing_without_new_alert_or_delivery(tmp
             assert session.query(DeliveryAttempt).count() == 1
 
         assert len(fake_slack.sent_payloads) == 1
+
+
+def test_form4_reparse_succeeds_with_live_style_detail_fixture(tmp_path: Path):
+    client, fake_slack, fixture_sec_client = create_phase3_client(
+        tmp_path,
+        feed_case="live_xsl_case",
+    )
+    with client:
+        seed_watchlist_and_destination()
+
+        response = client.get("/")
+        csrf_token = extract_csrf_token(response.text)
+        client.post(
+            "/actions/ingest-form4-now",
+            data={"csrf_token": csrf_token},
+            follow_redirects=True,
+        )
+        assert client.app.state.worker.wait_for_idle(timeout=5.0)
+
+        with open_session() as session:
+            filing = session.query(Filing).one()
+            filing_id = filing.id
+
+        detail_response = client.get(f"/filings/{filing_id}")
+        detail_csrf = extract_csrf_token(detail_response.text)
+        reparse_response = client.post(
+            f"/filings/{filing_id}/reparse",
+            data={"csrf_token": detail_csrf},
+            follow_redirects=True,
+        )
+        assert reparse_response.status_code == 200
+        assert client.app.state.worker.wait_for_idle(timeout=5.0)
+
+        with open_session() as session:
+            filing = session.get(Filing, filing_id)
+            assert filing is not None
+            assert filing.source_url == LIVE_XSL_XML_URL
+            assert filing.parser_status == "success"
+            assert session.query(Alert).count() == 1
+            assert session.query(DeliveryAttempt).count() == 1
+
+        assert len(fake_slack.sent_payloads) == 1
+        assert fixture_sec_client.calls.count(LIVE_XSL_XML_URL) >= 2
+
+
+def test_form4_reparse_missing_xml_marks_failure_cleanly(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    fixture_sec_client = FixtureSecClient(
+        json_map={COMPANY_TICKERS_URL: load_json("company_tickers.json")},
+        text_map={
+            MISSING_XML_DETAIL_URL: load_text("form4", "missing_xml_live", "detail-index.html"),
+        },
+    )
+    fake_slack = FakeSlackNotifier()
+    app = create_app(
+        settings,
+        service_overrides={
+            "sec_client": fixture_sec_client,
+            "slack_notifier": fake_slack,
+        },
+    )
+    client = TestClient(app)
+    with client:
+        with open_session() as session:
+            filing = Filing(
+                accession_number="0000320193-26-000205",
+                form_type="4",
+                detail_url=MISSING_XML_DETAIL_URL,
+                source_url=None,
+                filed_date=date(2026, 3, 26),
+                accepted_at=datetime(2026, 3, 26, 9, 31, tzinfo=UTC),
+                issuer_cik="0000320193",
+                issuer_name="Apple Inc.",
+                issuer_ticker="AAPL",
+                parser_status="success",
+                scoring_status="success",
+                summarization_status="success",
+                summary_headline="Existing headline",
+                summary_context="Existing context",
+            )
+            session.add(filing)
+            session.commit()
+            filing_id = filing.id
+
+        detail_response = client.get(f"/filings/{filing_id}")
+        detail_csrf = extract_csrf_token(detail_response.text)
+        reparse_response = client.post(
+            f"/filings/{filing_id}/reparse",
+            data={"csrf_token": detail_csrf},
+            follow_redirects=True,
+        )
+        assert reparse_response.status_code == 200
+        assert client.app.state.worker.wait_for_idle(timeout=5.0)
+
+        with open_session() as session:
+            filing = session.get(Filing, filing_id)
+            error = session.query(StageError).order_by(StageError.id.desc()).first()
+            assert filing is not None
+            assert filing.parser_status == "failed"
+            assert filing.scoring_status == "skipped"
+            assert filing.summarization_status == "skipped"
+            assert error is not None
+            assert error.stage == "reparse"
+            assert error.error_class == "MissingXmlError"
+            assert "Unable to locate ownership XML during reparse." in error.message
+
+        assert len(fake_slack.sent_payloads) == 0
 
 
 def test_form4_slack_failure_is_isolated_from_ingest(tmp_path: Path):
@@ -359,6 +654,8 @@ def _detail_url_for_case(case: str) -> str:
             "https://www.sec.gov/Archives/edgar/data/789019/"
             "000078901926000210/0000789019-26-000210-index.html"
         )
+    if case == "live_xsl_case":
+        return LIVE_XSL_DETAIL_URL
     return (
         "https://www.sec.gov/Archives/edgar/data/320193/"
         "000032019326000203/0000320193-26-000203-index.html"
@@ -381,4 +678,6 @@ def _xml_url_for_case(case: str) -> str:
             "https://www.sec.gov/Archives/edgar/data/789019/"
             "000078901926000210/msft-ownership-data.xml"
         )
+    if case == "live_xsl_case":
+        return LIVE_XSL_XML_URL
     return "https://www.sec.gov/Archives/edgar/data/320193/000032019326000203/aapl-form4-10b5.xml"
