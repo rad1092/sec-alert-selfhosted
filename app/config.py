@@ -20,6 +20,10 @@ class Settings(BaseSettings):
 
     app_name: str = Field(default="SEC Alert Self-Hosted", alias="APP_NAME")
     app_host: str = Field(default="127.0.0.1", alias="APP_HOST")
+    app_allow_container_bind: bool = Field(
+        default=False,
+        alias="APP_ALLOW_CONTAINER_BIND",
+    )
     app_port: int = Field(default=8000, alias="APP_PORT")
     data_dir: Path = Field(default=Path("./data"), alias="DATA_DIR")
     database_url: str | None = Field(default=None, alias="DATABASE_URL")
@@ -59,11 +63,8 @@ class Settings(BaseSettings):
 
     @field_validator("app_host")
     @classmethod
-    def validate_localhost_only(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if normalized not in LOCAL_HOSTS:
-            raise ValueError("APP_HOST must be 127.0.0.1 or localhost in v1.")
-        return normalized
+    def normalize_app_host(cls, value: str) -> str:
+        return value.strip().lower()
 
     @field_validator("sec_user_agent")
     @classmethod
@@ -130,6 +131,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def apply_defaults(self) -> Settings:
+        if self.app_host not in LOCAL_HOSTS:
+            if not (self.app_allow_container_bind and self.app_host == "0.0.0.0"):
+                raise ValueError(
+                    "APP_HOST must be 127.0.0.1 or localhost in v1 unless "
+                    "APP_ALLOW_CONTAINER_BIND=true for 0.0.0.0."
+                )
         if self.watchlist_soft_cap > self.watchlist_hard_cap:
             raise ValueError("WATCHLIST_SOFT_CAP cannot exceed WATCHLIST_HARD_CAP.")
         if self.database_url is None:

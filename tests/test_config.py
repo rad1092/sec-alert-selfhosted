@@ -30,6 +30,18 @@ def test_settings_reject_non_localhost(tmp_path: Path):
         )
 
 
+def test_settings_allow_container_bind_for_docker_only(tmp_path: Path):
+    settings = Settings(
+        APP_HOST="0.0.0.0",
+        APP_ALLOW_CONTAINER_BIND=True,
+        DATA_DIR=tmp_path,
+        DATABASE_URL=f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
+        SEC_USER_AGENT="SEC Alert Test test@example.com",
+    )
+    assert settings.app_host == "0.0.0.0"
+    assert settings.app_allow_container_bind is True
+
+
 def test_settings_reject_rate_limit_above_ten(tmp_path: Path):
     with pytest.raises(ValidationError):
         Settings(

@@ -5,12 +5,10 @@ services:
     env_file:
       - .env
     environment:
-      APP_HOST: 127.0.0.1
+      APP_HOST: 0.0.0.0
+      APP_ALLOW_CONTAINER_BIND: "true"
       APP_PORT: 8000
-      SCHEDULER_ENABLED: "true"
-    network_mode: host
+    ports:
+      - "127.0.0.1:8000:8000"
     volumes:
-      - ./:/app
       - ./data:/app/data
-    command: uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
-

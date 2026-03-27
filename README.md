@@ -32,6 +32,7 @@ The product is **near-real-time**, not instant. SEC filings usually become visib
 ## Security posture
 
 - `APP_HOST` must stay `127.0.0.1` or `localhost`
+- `APP_ALLOW_CONTAINER_BIND=true` is only for the Docker container's internal `0.0.0.0` bind
 - `SEC_USER_AGENT` is required
 - secrets come from environment variables only
 - secrets are not stored in the database
@@ -92,7 +93,22 @@ OpenAI rewrite is optional. Deterministic scoring remains authoritative, and Ope
 
 ## Docker
 
-The included Docker files are a starting point for local self-hosting. For strict localhost-only access, host networking is preferred on Linux so the app can still bind `127.0.0.1`.
+The included Docker files are intended for local self-hosting smoke and runtime use, including Docker Desktop on Windows.
+
+- `docker compose` publishes the app on `127.0.0.1:8000` only
+- the container binds `0.0.0.0` internally so Docker port publishing works, but host exposure is still limited to localhost
+- the compose file does not live-mount the project source tree; only `./data` is persisted
+- scheduler behavior remains env-driven, so `SCHEDULER_ENABLED=false` keeps the app in manual-only mode
+
+Run Docker locally with:
+
+```powershell
+Copy-Item .env.example .env
+# Set SEC_USER_AGENT in .env, then:
+docker compose up --build
+```
+
+This Docker path is for smoke/self-host runtime stability. A hot-reload/live-mount development compose setup is not included in v1.
 
 ## Commands
 

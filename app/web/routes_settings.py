@@ -12,6 +12,7 @@ def settings_page(request: Request):
     settings = request.app.state.settings
     sanitized = {
         "APP_HOST": settings.app_host,
+        "APP_ALLOW_CONTAINER_BIND": settings.app_allow_container_bind,
         "APP_PORT": settings.app_port,
         "DATA_DIR": str(settings.data_dir),
         "DATABASE_URL": settings.database_url,
