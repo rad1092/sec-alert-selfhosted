@@ -16,6 +16,10 @@ TRUE_VALUES = {"1", "true", "y", "yes"}
 XML_TYPE_NAMES = {"4", "4/A"}
 
 
+class OwnershipXmlParseError(ValueError):
+    pass
+
+
 @dataclass(slots=True)
 class DetailDocument:
     url: str
@@ -52,7 +56,7 @@ class Form4Parser:
         try:
             root = ET.fromstring(ownership_xml)
         except ET.ParseError as exc:
-            raise ValueError("Unable to parse Form 4 ownership XML.") from exc
+            raise OwnershipXmlParseError("Unable to parse Form 4 ownership XML.") from exc
 
         payload = {
             "payload_version": 1,
@@ -534,31 +538,44 @@ def parse_form4_detail_page(detail_index_html: str, *, detail_url: str) -> Form4
 
 
 def locate_ownership_xml(detail_metadata: Form4DetailMetadata) -> str | None:
-    best_match: str | None = None
+    candidates = ordered_ownership_xml_candidates(detail_metadata)
+    if not candidates:
+        return None
+    return candidates[0].url
+
+
+def ordered_ownership_xml_candidates(detail_metadata: Form4DetailMetadata) -> list[DetailDocument]:
+    ordered: list[DetailDocument] = []
+    seen_urls: set[str] = set()
+
+    def add_candidate(document: DetailDocument) -> None:
+        if document.url in seen_urls:
+            return
+        ordered.append(document)
+        seen_urls.add(document.url)
+
     for document in detail_metadata.documents:
         if (
             document.document_type.upper() in XML_TYPE_NAMES
             and document.filename.lower().endswith(".xml")
         ):
-            return document.url
+            add_candidate(document)
     for document in detail_metadata.documents:
         if (
             document.document_type.upper() in XML_TYPE_NAMES
             and document.url.lower().endswith(".xml")
         ):
-            return document.url
+            add_candidate(document)
     for document in detail_metadata.documents:
         if not _document_is_xml(document):
             continue
         candidate_text = _document_candidate_text(document)
         if "ownership" in candidate_text or "xml" in candidate_text or "data" in candidate_text:
-            best_match = document.url
-    if best_match is not None:
-        return best_match
+            add_candidate(document)
     for document in detail_metadata.documents:
         if _document_is_xml(document):
-            return document.url
-    return None
+            add_candidate(document)
+    return ordered
 
 
 def _parse_documents(soup: BeautifulSoup, detail_url: str) -> list[DetailDocument]:

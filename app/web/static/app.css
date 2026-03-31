@@ -357,8 +357,24 @@ button.secondary:hover {
   background: var(--neutral);
 }
 
+.pill-current {
+  background: #f8e2d8;
+}
+
+.pill-recovered {
+  background: #dff1e6;
+}
+
+.pill-historical {
+  background: #ece7dc;
+}
+
 .pill-subtle {
   background: #efe7d4;
+}
+
+.issue-summary {
+  margin-bottom: 0.9rem;
 }
 
 .filter-bar {

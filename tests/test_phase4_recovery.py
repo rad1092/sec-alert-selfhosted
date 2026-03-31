@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -10,7 +10,15 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.db import open_session
 from app.main import create_app
-from app.models import Alert, DeliveryAttempt, Destination, Filing, IngestRun, WatchlistEntry
+from app.models import (
+    Alert,
+    DeliveryAttempt,
+    Destination,
+    Filing,
+    IngestRun,
+    StageError,
+    WatchlistEntry,
+)
 from app.services.broker import BrokerPriority, SecRequestBroker
 from app.services.notify.base import NotificationResult
 from app.services.scheduler import SchedulerService
@@ -66,6 +74,8 @@ def make_settings(tmp_path: Path, *, overlap_rows: int = 20) -> Settings:
         SEC_POLL_INTERVAL_SECONDS=60,
         SEC_RATE_LIMIT_RPS=10,
         SEC_LIVE_8K_OVERLAP_ROWS=overlap_rows,
+        OPENAI_API_KEY=None,
+        OPENAI_MODEL=None,
         SCHEDULER_ENABLED=False,
         TESTING=True,
     )
@@ -508,6 +518,70 @@ def test_backfill_recovers_historical_accessions_for_new_and_reenabled_watchlist
             assert any(run.triggered_by == "watchlist_enable" for run in runs)
 
         assert len(fake_slack.sent_payloads) == 2
+
+
+def test_repair_revalidates_recent_form4_stage_errors(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("app.services.ingest.previous_business_days", lambda count: [])
+
+    accession = "0000320193-26-000204"
+    form4_detail = detail_url(AAPL_CIK, accession)
+    form4_xml = (
+        "https://www.sec.gov/Archives/edgar/data/320193/"
+        "000032019326000204/xslF345X05/wk-form4_1772053959.xml"
+    )
+    sec_client = ScriptedFixtureSecClient(
+        json_map={COMPANY_TICKERS_URL: load_json("company_tickers.json")},
+        text_map={
+            form4_detail: load_text("form4", "live_xsl_case", "detail-index.html"),
+            form4_xml: load_text("form4", "live_xsl_case", "ownership.xml"),
+        },
+    )
+    client, fake_slack = make_phase4_client(tmp_path, sec_client=sec_client)
+    with client:
+        seed_watchlist_and_destination()
+        recent_error_time = datetime.now(UTC) - timedelta(hours=3)
+        with open_session() as session:
+            session.add(
+                StageError(
+                    stage="form4_accession",
+                    source_name="latest_ownership",
+                    filing_accession=accession,
+                    error_class="OwnershipXmlParseError",
+                    message="Synthetic recent Form 4 parse failure.",
+                    is_retryable=False,
+                    created_at=recent_error_time,
+                    updated_at=recent_error_time,
+                )
+            )
+            session.commit()
+
+        response = client.get("/")
+        csrf_token = extract_csrf_token(response.text)
+        client.post("/actions/repair-now", data={"csrf_token": csrf_token}, follow_redirects=True)
+        assert client.app.state.worker.wait_for_idle(timeout=5.0)
+
+        with open_session() as session:
+            assert session.query(Filing).count() == 1
+            assert session.query(Alert).count() == 1
+            assert session.query(DeliveryAttempt).count() == 1
+            filing = session.query(Filing).one()
+            assert filing.accession_number == accession
+            assert filing.parser_status == "success"
+            repair_run = session.query(IngestRun).filter_by(triggered_by="repair").one()
+            assert "revalidated_form4=1" in (repair_run.notes or "")
+            assert "recovered_form4=1" in (repair_run.notes or "")
+
+        response = client.get("/")
+        csrf_token = extract_csrf_token(response.text)
+        client.post("/actions/repair-now", data={"csrf_token": csrf_token}, follow_redirects=True)
+        assert client.app.state.worker.wait_for_idle(timeout=5.0)
+
+        with open_session() as session:
+            assert session.query(Filing).count() == 1
+            assert session.query(Alert).count() == 1
+            assert session.query(DeliveryAttempt).count() == 1
+
+        assert len(fake_slack.sent_payloads) == 1
 
 
 def test_p3_chunking_does_not_starve_p1_or_p2():

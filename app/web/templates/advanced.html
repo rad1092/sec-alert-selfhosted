@@ -64,6 +64,25 @@
   <article class="card">
     <div class="section-header">
       <div>
+        <p class="eyebrow">Form 4 Health</p>
+        <h2>Trust summary</h2>
+      </div>
+    </div>
+    <p><strong>{{ form4_health.status }}</strong></p>
+    <p>{{ form4_health.note }}</p>
+    <dl class="stack compact-list">
+      <div><dt>Last successful parse</dt><dd>{{ form4_health.last_success_display }}</dd></div>
+      <div><dt>Current issues</dt><dd>{{ form4_health.current_count }}</dd></div>
+      <div><dt>Recovered issues</dt><dd>{{ form4_health.recovered_count }}</dd></div>
+      <div><dt>Historical issues</dt><dd>{{ form4_health.historical_count }}</dd></div>
+    </dl>
+  </article>
+</section>
+
+<section class="grid two-up">
+  <article class="card">
+    <div class="section-header">
+      <div>
         <p class="eyebrow">Scheduler Snapshot</p>
         <h2>Polling schedule</h2>
       </div>
@@ -77,9 +96,7 @@
       {% endfor %}
     </dl>
   </article>
-</section>
 
-<section class="grid two-up">
   <article class="card">
     <div class="section-header">
       <div>
@@ -92,7 +109,7 @@
       {% for run in recent_run_rows %}
       <article class="issue-item">
         <strong>{{ run.label }}</strong>
-        <p>{{ run.status }} • {{ run.finished_at_display }}</p>
+        <p>{{ run.status }} | {{ run.finished_at_display }}</p>
         <p class="muted">{{ run.note }}</p>
       </article>
       {% endfor %}
@@ -101,12 +118,14 @@
     <p>No ingest runs yet.</p>
     {% endif %}
   </article>
+</section>
 
+<section class="grid two-up">
   <article class="card">
     <div class="section-header">
       <div>
         <p class="eyebrow">Recent Issues</p>
-        <h2>Raw error log</h2>
+        <h2>Issue archive snapshot</h2>
       </div>
       <a href="/errors">Open full issues page</a>
     </div>
@@ -114,9 +133,12 @@
     <div class="stack issue-stack">
       {% for error in recent_error_rows %}
       <article class="issue-item">
-        <strong>{{ error.title }}</strong>
+        <div class="section-header">
+          <strong>{{ error.title }}</strong>
+          <span class="pill pill-{{ error.state_css }}">{{ error.state_label }}</span>
+        </div>
         <p>{{ error.help_text }}</p>
-        <p class="muted">{{ error.source_label }} • {{ error.created_at_display }}</p>
+        <p class="muted">{{ error.source_label }} | {{ error.created_at_display }}</p>
       </article>
       {% endfor %}
     </div>
@@ -124,9 +146,7 @@
     <p>No recent issues.</p>
     {% endif %}
   </article>
-</section>
 
-<section class="grid two-up">
   <article class="card">
     <div class="section-header">
       <div>
@@ -135,8 +155,8 @@
       </div>
     </div>
     <p>
-      {{ release_diagnostics_summary.pass }} pass •
-      {{ release_diagnostics_summary.warn }} warn •
+      {{ release_diagnostics_summary.pass }} pass |
+      {{ release_diagnostics_summary.warn }} warn |
       {{ release_diagnostics_summary.fail }} fail
     </p>
     <div class="stack issue-stack">
@@ -151,7 +171,9 @@
       {% endfor %}
     </div>
   </article>
+</section>
 
+<section class="grid two-up">
   <article class="card">
     <div class="section-header">
       <div>
@@ -177,20 +199,20 @@
       </tbody>
     </table>
   </article>
-</section>
 
-<section class="card">
-  <div class="section-header">
-    <div>
-      <p class="eyebrow">Buyer Support</p>
-      <h2>Install and help checklist</h2>
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Buyer Support</p>
+        <h2>Install and help checklist</h2>
+      </div>
     </div>
-  </div>
-  <div class="stack compact-list">
-    <p>Install with Docker or local <code>uvicorn</code>, then confirm <code>/healthz</code>, <code>/settings</code>, and <code>/advanced</code> all load.</p>
-    <p>Set <code>SEC_USER_AGENT</code> first. Use <code>SMTP_TO</code> as a comma-separated recipient list if email delivery is enabled.</p>
-    <p>If you need help, share the install method, the relevant <code>/settings</code> values, and the latest issue from <code>/errors</code>.</p>
-    <p>For backup or restore questions, start with the <code>data/</code> directory and the SQLite database file shown in settings.</p>
-  </div>
+    <div class="stack compact-list">
+      <p>Install with Docker or local <code>uvicorn</code>, then confirm <code>/healthz</code>, <code>/settings</code>, and <code>/advanced</code> all load.</p>
+      <p>Set <code>SEC_USER_AGENT</code> first. Use <code>SMTP_TO</code> as a comma-separated recipient list if email delivery is enabled.</p>
+      <p>If you need help, share the install method, the relevant <code>/settings</code> values, and the latest issue from <code>/errors</code>.</p>
+      <p>For backup or restore questions, start with the <code>data/</code> directory and the SQLite database file shown in settings.</p>
+    </div>
+  </article>
 </section>
 {% endblock %}

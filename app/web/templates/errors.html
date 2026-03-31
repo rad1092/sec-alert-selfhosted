@@ -5,10 +5,10 @@
   <div class="section-header">
     <div>
       <p class="eyebrow">Issues</p>
-      <h2>Recent problems the app recorded</h2>
+      <h2>Recorded pipeline issues</h2>
     </div>
   </div>
-  <p>This page is for operator follow-up. A listed issue does not always mean the whole app is broken; often it only affects one filing or one repair cycle.</p>
+  <p>This page is the issue archive. Current items need attention now, recovered items were followed by a successful filing parse, and historical items are older records kept for operator context.</p>
 </section>
 
 <section class="card">
@@ -19,16 +19,19 @@
       <div class="section-header">
         <div>
           <h3>{{ error.title }}</h3>
-          <p class="muted">{{ error.source_label }} • {{ error.created_at_display }}</p>
+          <p class="muted">{{ error.source_label }} | {{ error.created_at_display }}</p>
         </div>
-        <span class="pill pill-{% if error.retryable %}neutral{% else %}subtle{% endif %}">
-          {{ "Retryable" if error.retryable else "Needs review" }}
-        </span>
+        <div class="signal-badges">
+          <span class="pill pill-{{ error.state_css }}">{{ error.state_label }}</span>
+          <span class="pill pill-{% if error.retryable %}neutral{% else %}subtle{% endif %}">
+            {{ "Retryable" if error.retryable else "Needs review" }}
+          </span>
+        </div>
       </div>
       <p>{{ error.help_text }}</p>
       <details>
         <summary>Raw error details</summary>
-        <p><code>{{ error.stage }}</code></p>
+        <p><code>{{ error.stage }}</code> | <code>{{ error.error_class }}</code></p>
         <p>{{ error.detail }}</p>
       </details>
     </article>

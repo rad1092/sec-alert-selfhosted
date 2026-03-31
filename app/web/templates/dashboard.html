@@ -92,16 +92,36 @@
       </div>
       <a href="/errors">View all issues</a>
     </div>
+    <article class="issue-item issue-summary">
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">Form 4 Health</p>
+          <strong>{{ form4_health.status }}</strong>
+        </div>
+      </div>
+      <p>{{ form4_health.note }}</p>
+      <p class="muted">
+        Last successful parse {{ form4_health.last_success_display }} |
+        Current {{ form4_health.current_count }} |
+        Recovered {{ form4_health.recovered_count }} |
+        Historical {{ form4_health.historical_count }}
+      </p>
+    </article>
     {% if recent_error_rows %}
     <div class="stack issue-stack">
       {% for error in recent_error_rows %}
       <article class="issue-item">
-        <strong>{{ error.title }}</strong>
+        <div class="section-header">
+          <strong>{{ error.title }}</strong>
+          <span class="pill pill-{{ error.state_css }}">{{ error.state_label }}</span>
+        </div>
         <p>{{ error.help_text }}</p>
-        <p class="muted">{{ error.source_label }} • {{ error.created_at_display }}</p>
+        <p class="muted">{{ error.source_label }} | {{ error.created_at_display }}</p>
       </article>
       {% endfor %}
     </div>
+    {% elif archived_error_count %}
+    <p>No current blocking issues. Older or recovered items remain in the issue archive.</p>
     {% else %}
     <p>No blocking issues recorded in the latest runs.</p>
     {% endif %}
@@ -126,7 +146,7 @@
       <div class="signal-card-head">
         <div>
           <p class="signal-ticker">{{ signal.ticker }}</p>
-          <p class="muted">{{ signal.form_type }} • filed {{ signal.filed_date_display }}</p>
+          <p class="muted">{{ signal.form_type }} | filed {{ signal.filed_date_display }}</p>
         </div>
         <div class="signal-badges">
           <span class="pill pill-{{ signal.direction }}">{{ signal.direction_label }}</span>
@@ -134,7 +154,7 @@
         </div>
       </div>
       <h3><a href="/filings/{{ signal.filing_id }}">{{ signal.headline }}</a></h3>
-      <p class="muted">Created {{ signal.created_at_display }} • {{ signal.delivery_label }}</p>
+      <p class="muted">Created {{ signal.created_at_display }} | {{ signal.delivery_label }}</p>
     </article>
     {% endfor %}
   </div>
@@ -157,7 +177,7 @@
       {% for run in recent_run_rows %}
       <article class="issue-item">
         <strong>{{ run.label }}</strong>
-        <p>{{ run.status }} • {{ run.finished_at_relative }}</p>
+        <p>{{ run.status }} | {{ run.finished_at_relative }}</p>
         <p class="muted">{{ run.note }}</p>
       </article>
       {% endfor %}

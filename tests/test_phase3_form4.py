@@ -11,14 +11,16 @@ from app.config import Settings
 from app.db import open_session
 from app.main import create_app
 from app.models import Alert, DeliveryAttempt, Destination, Filing, StageError, WatchlistEntry
+from app.services.ingest import Form4ProcessingError
 from app.services.scoring.form4 import Form4Scorer
-from app.services.sec.client import FixtureSecClient
+from app.services.sec.client import FixtureSecClient, ScriptedFixtureSecClient, SecTextResponse
 from app.services.sec.form4 import (
     DetailDocument,
     Form4DetailMetadata,
     Form4Parser,
     _parse_documents,
     locate_ownership_xml,
+    ordered_ownership_xml_candidates,
 )
 from app.services.sec.latest_ownership import LATEST_OWNERSHIP_URL, parse_ownership_candidates
 from app.services.sec.resolver import COMPANY_TICKERS_URL
@@ -304,6 +306,251 @@ def test_locate_ownership_xml_handles_live_href_direct_xml_and_ex99_fallback():
         locate_ownership_xml(amended_metadata)
         == "https://www.sec.gov/Archives/edgar/data/320193/test-amendment.xml"
     )
+
+
+def test_ordered_ownership_xml_candidates_preserve_priority_rules():
+    metadata = Form4DetailMetadata(
+        detail_url=LIVE_XSL_DETAIL_URL,
+        accession_number="0001628280-26-011664",
+        form_type="4",
+        filed_date=None,
+        accepted_at=None,
+        issuer_cik="0001005229",
+        issuer_name="Acme United Corp.",
+        issuer_ticker="ACU",
+        documents=[
+            DetailDocument(
+                url=(
+                    "https://www.sec.gov/Archives/edgar/data/1005229/"
+                    "000162828026011664/xslF345X05/wk-form4_1772053936.xml"
+                ),
+                filename="wk-form4_1772053936.html",
+                description="FORM 4",
+                document_type="4",
+            ),
+            DetailDocument(
+                url=(
+                    "https://www.sec.gov/Archives/edgar/data/1005229/"
+                    "000162828026011664/wk-form4_1772053936.xml"
+                ),
+                filename="wk-form4_1772053936.xml",
+                description="FORM 4",
+                document_type="4",
+            ),
+            DetailDocument(
+                url="https://www.sec.gov/Archives/edgar/data/1005229/000162828026011664/extra.xml",
+                filename="extra.xml",
+                description="OWNERSHIP DOCUMENT",
+                document_type="EX-99",
+            ),
+        ],
+    )
+
+    candidates = ordered_ownership_xml_candidates(metadata)
+    assert [candidate.url for candidate in candidates] == [
+        "https://www.sec.gov/Archives/edgar/data/1005229/000162828026011664/"
+        "wk-form4_1772053936.xml",
+        "https://www.sec.gov/Archives/edgar/data/1005229/000162828026011664/"
+        "xslF345X05/wk-form4_1772053936.xml",
+        "https://www.sec.gov/Archives/edgar/data/1005229/000162828026011664/extra.xml",
+    ]
+
+
+def test_form4_candidate_loader_retries_after_non_xml_body(tmp_path: Path):
+    detail_html = load_text("form4", "buy_multi_reporter", "detail-index.html")
+    fallback_url = "https://www.sec.gov/Archives/edgar/data/320193/000032019326000200/fallback.xml"
+    sec_client = ScriptedFixtureSecClient(
+        json_map={COMPANY_TICKERS_URL: load_json("company_tickers.json")},
+        text_map={
+            BUY_XML_URL: SecTextResponse(
+                text="<html>Access Denied</html>",
+                status_code=200,
+                content_type="text/html",
+                final_url=BUY_XML_URL,
+                body_length=len("<html>Access Denied</html>"),
+            ),
+            fallback_url: SecTextResponse(
+                text=load_text("form4", "buy_multi_reporter", "ownership.xml"),
+                status_code=200,
+                content_type="text/xml",
+                final_url=fallback_url,
+                body_length=len(load_text("form4", "buy_multi_reporter", "ownership.xml")),
+            ),
+        },
+    )
+    app = create_app(
+        make_settings(tmp_path),
+        service_overrides={"sec_client": sec_client, "slack_notifier": FakeSlackNotifier()},
+    )
+
+    with TestClient(app):
+        metadata = Form4DetailMetadata(
+            detail_url=BUY_DETAIL_URL,
+            accession_number="0000320193-26-000200",
+            form_type="4",
+            filed_date=None,
+            accepted_at=None,
+            issuer_cik="0000320193",
+            issuer_name="Apple Inc.",
+            issuer_ticker="AAPL",
+            documents=[
+                DetailDocument(
+                    url=BUY_XML_URL,
+                    filename="form4-multi-buy.xml",
+                    description="FORM 4",
+                    document_type="4",
+                ),
+                DetailDocument(
+                    url=fallback_url,
+                    filename="fallback.xml",
+                    description="OWNERSHIP DOCUMENT",
+                    document_type="EX-99",
+                ),
+            ],
+        )
+        parsed, xml_url = app.state.form4_ingest_service._load_form4_candidate(
+            detail_html=detail_html,
+            detail_metadata=metadata,
+        )
+
+    assert xml_url == fallback_url
+    assert parsed.issuer_cik == "0000320193"
+
+
+def test_form4_candidate_loader_classifies_non_xml_and_xml_parse_failures(tmp_path: Path):
+    detail_html = load_text("form4", "buy_multi_reporter", "detail-index.html")
+    metadata = Form4DetailMetadata(
+        detail_url=BUY_DETAIL_URL,
+        accession_number="0000320193-26-000200",
+        form_type="4",
+        filed_date=None,
+        accepted_at=None,
+        issuer_cik="0000320193",
+        issuer_name="Apple Inc.",
+        issuer_ticker="AAPL",
+        documents=[
+            DetailDocument(
+                url=BUY_XML_URL,
+                filename="form4-multi-buy.xml",
+                description="FORM 4",
+                document_type="4",
+            )
+        ],
+    )
+
+    bad_body = "<html>Access Denied</html>"
+    malformed_xml = "<?xml version='1.0'?><ownershipDocument>"
+    non_xml_client = ScriptedFixtureSecClient(
+        json_map={COMPANY_TICKERS_URL: load_json("company_tickers.json")},
+        text_map={
+            BUY_XML_URL: SecTextResponse(
+                text=bad_body,
+                status_code=200,
+                content_type="text/html",
+                final_url=BUY_XML_URL,
+                body_length=len(bad_body),
+            )
+        },
+    )
+    malformed_client = ScriptedFixtureSecClient(
+        json_map={COMPANY_TICKERS_URL: load_json("company_tickers.json")},
+        text_map={
+            BUY_XML_URL: SecTextResponse(
+                text=malformed_xml,
+                status_code=200,
+                content_type="text/xml",
+                final_url=BUY_XML_URL,
+                body_length=len(malformed_xml),
+            )
+        },
+    )
+
+    app_non_xml = create_app(
+        make_settings(tmp_path / "nonxml"),
+        service_overrides={"sec_client": non_xml_client, "slack_notifier": FakeSlackNotifier()},
+    )
+
+    with TestClient(app_non_xml):
+        try:
+            app_non_xml.state.form4_ingest_service._load_form4_candidate(
+                detail_html=detail_html,
+                detail_metadata=metadata,
+            )
+            raise AssertionError("Expected Form4ProcessingError for non-XML response")
+        except Form4ProcessingError as exc:
+            assert exc.error_class == "SecInterceptionBodyError"
+
+    app_malformed = create_app(
+        make_settings(tmp_path / "malformed"),
+        service_overrides={"sec_client": malformed_client, "slack_notifier": FakeSlackNotifier()},
+    )
+    with TestClient(app_malformed):
+        try:
+            app_malformed.state.form4_ingest_service._load_form4_candidate(
+                detail_html=detail_html,
+                detail_metadata=metadata,
+            )
+            raise AssertionError("Expected Form4ProcessingError for malformed XML")
+        except Form4ProcessingError as exc:
+            assert exc.error_class == "OwnershipXmlParseError"
+
+
+def test_form4_reparse_falls_back_from_stale_source_url(tmp_path: Path):
+    stale_url = "https://www.sec.gov/Archives/edgar/data/320193/000032019326000204/stale.xml"
+    settings = make_settings(tmp_path)
+    sec_client = ScriptedFixtureSecClient(
+        json_map={COMPANY_TICKERS_URL: load_json("company_tickers.json")},
+        text_map={
+            LIVE_XSL_DETAIL_URL: load_text("form4", "live_xsl_case", "detail-index.html"),
+            LIVE_XSL_XML_URL: SecTextResponse(
+                text=load_text("form4", "live_xsl_case", "ownership.xml"),
+                status_code=200,
+                content_type="text/xml",
+                final_url=LIVE_XSL_XML_URL,
+                body_length=len(load_text("form4", "live_xsl_case", "ownership.xml")),
+            ),
+            stale_url: SecTextResponse(
+                text="<html>Access Denied</html>",
+                status_code=200,
+                content_type="text/html",
+                final_url=stale_url,
+                body_length=len("<html>Access Denied</html>"),
+            ),
+        },
+    )
+    app = create_app(
+        settings,
+        service_overrides={"sec_client": sec_client, "slack_notifier": FakeSlackNotifier()},
+    )
+
+    with TestClient(app):
+        with open_session() as session:
+            filing = Filing(
+                accession_number="0000320193-26-000204",
+                form_type="4",
+                is_amendment=False,
+                filed_date=date(2026, 3, 24),
+                accepted_at=datetime(2026, 3, 24, 9, 30, tzinfo=UTC),
+                issuer_cik="0000320193",
+                issuer_ticker="AAPL",
+                issuer_name="Apple Inc.",
+                parser_status="failed",
+                scoring_status="skipped",
+                summarization_status="skipped",
+                detail_url=LIVE_XSL_DETAIL_URL,
+                source_url=stale_url,
+            )
+            session.add(filing)
+            session.commit()
+            filing_id = filing.id
+
+        app.state.form4_ingest_service.reparse_filing(filing_id)
+
+        with open_session() as session:
+            refreshed = session.get(Filing, filing_id)
+            assert refreshed is not None
+            assert refreshed.parser_status == "success"
+            assert refreshed.source_url == LIVE_XSL_XML_URL
 
 
 def test_form4_parser_and_scorer_cover_multi_reporter_sale_and_neutral_cases():

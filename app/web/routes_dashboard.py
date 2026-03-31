@@ -15,6 +15,10 @@ from app.web.helpers import render_template
 router = APIRouter()
 
 HISTORICAL_WINDOW_DAYS = 7
+CURRENT_ISSUE_WINDOW = timedelta(hours=24)
+FORM4_TYPES = {"4", "4/A"}
+FORM4_ERROR_STAGES = {"form4_accession", "form4_xml_locator", "form4_parser"}
+FORM4_ERROR_SOURCES = {"latest_ownership", "form4_detail", "ownership_xml", "manual-reparse"}
 ERROR_TITLES = {
     "manual_ingest": "A live filing could not be imported cleanly.",
     "reparse": "A saved filing could not be reparsed cleanly.",
@@ -32,6 +36,40 @@ ERROR_HELP = {
     ),
     "repair": "Recent missed filings may need another repair pass once the blocking issue is gone.",
     "backfill": "Older historical signals may be incomplete until the backfill is rerun.",
+}
+ERROR_CLASS_TITLES = {
+    "MissingXmlError": "The SEC detail page did not expose a usable ownership XML document.",
+    "OwnershipXmlParseError": "A Form 4 ownership document was fetched, but XML parsing failed.",
+    "NonXmlResponseError": "A Form 4 link returned a non-XML document.",
+    "SecInterceptionBodyError": "The SEC returned a temporary or blocking response body.",
+    "SecTransientResponseError": "The SEC returned a temporary response while fetching a filing.",
+    "SecPublicationLagError": "The filing was accepted, but the SEC document was not visible yet.",
+    "SecTransportError": "The filing request could not reach the SEC cleanly.",
+    "SecHttpStatusError": "The SEC returned an unexpected response while fetching a filing.",
+}
+ERROR_CLASS_HELP = {
+    "MissingXmlError": "This usually affects a specific filing rather than the whole watchlist.",
+    "OwnershipXmlParseError": (
+        "The filing was discovered, but investor-facing details could not be extracted yet."
+    ),
+    "NonXmlResponseError": (
+        "The filing link resolved, but the body was not an ownership XML document."
+    ),
+    "SecInterceptionBodyError": (
+        "The filing pipeline kept running, but the SEC response needs another attempt later."
+    ),
+    "SecTransientResponseError": (
+        "This is usually temporary and can clear on a later retry or repair run."
+    ),
+    "SecPublicationLagError": (
+        "The filing may still be propagating through the SEC archive. Try again in a few minutes."
+    ),
+    "SecTransportError": (
+        "This is usually a connection or timeout condition rather than a parser problem."
+    ),
+    "SecHttpStatusError": (
+        "The filing pipeline kept running, but this response needs operator follow-up."
+    ),
 }
 RUN_LABELS = {
     "manual_8k": "Manual 8-K check",
@@ -114,6 +152,14 @@ def _relative_time(value: datetime | None) -> str:
 
 def _today_utc() -> date:
     return datetime.now(UTC).date()
+
+
+def _utc_dt(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _is_historical(filed_date: date | None) -> bool:
@@ -259,18 +305,90 @@ def _summarize_run(run: IngestRun) -> dict[str, str]:
     }
 
 
-def _summarize_error(error: StageError) -> dict[str, str | bool]:
-    title = ERROR_TITLES.get(error.stage, error.message)
-    help_text = ERROR_HELP.get(
-        error.stage,
-        "The filing pipeline kept running, but this one item needs operator attention.",
+def _filing_map_for_errors(session: Session, errors: list[StageError]) -> dict[str, Filing]:
+    accessions = {error.filing_accession for error in errors if error.filing_accession}
+    if not accessions:
+        return {}
+    filings = session.scalars(
+        select(Filing).where(Filing.accession_number.in_(tuple(accessions)))
+    ).all()
+    return {filing.accession_number: filing for filing in filings}
+
+
+def _is_form4_issue(error: StageError, filing: Filing | None) -> bool:
+    if filing is not None and filing.form_type in FORM4_TYPES:
+        return True
+    if error.stage in FORM4_ERROR_STAGES or error.stage.startswith("form4_"):
+        return True
+    if error.source_name in FORM4_ERROR_SOURCES:
+        return True
+    return error.error_class in {
+        "MissingXmlError",
+        "OwnershipXmlParseError",
+        "NonXmlResponseError",
+        "SecInterceptionBodyError",
+        "SecTransientResponseError",
+        "SecPublicationLagError",
+        "SecTransportError",
+        "SecHttpStatusError",
+    }
+
+
+def _issue_state(error: StageError, filing: Filing | None) -> str:
+    error_created_at = _utc_dt(error.created_at) or datetime.min.replace(tzinfo=UTC)
+    filing_updated_at = _utc_dt(filing.updated_at) if filing is not None else None
+    if (
+        filing is not None
+        and filing.parser_status == "success"
+        and filing_updated_at is not None
+        and filing_updated_at > error_created_at
+    ):
+        return "recovered"
+    if error_created_at >= datetime.now(UTC) - CURRENT_ISSUE_WINDOW:
+        return "current"
+    return "historical"
+
+
+def _issue_state_label(state: str) -> str:
+    return {
+        "current": "Current",
+        "recovered": "Recovered",
+        "historical": "Historical",
+    }.get(state, state.title())
+
+
+def _issue_title(error: StageError) -> str:
+    return ERROR_CLASS_TITLES.get(
+        error.error_class,
+        ERROR_TITLES.get(error.stage, error.message),
     )
-    filing_bits = []
-    if error.filing_accession:
-        filing_bits.append(error.filing_accession)
-    if error.source_name:
-        filing_bits.append(error.source_name)
-    source_label = " • ".join(filing_bits) if filing_bits else "General pipeline issue"
+
+
+def _issue_help(error: StageError) -> str:
+    return ERROR_CLASS_HELP.get(
+        error.error_class,
+        ERROR_HELP.get(
+            error.stage,
+            "The filing pipeline kept running, but this one item needs operator attention.",
+        ),
+    )
+
+
+def _summarize_error(error: StageError, filing: Filing | None) -> dict[str, str | bool]:
+    title = _issue_title(error)
+    help_text = _issue_help(error)
+    filing_name = filing.issuer_ticker or filing.issuer_name if filing is not None else None
+    state = _issue_state(error, filing)
+    if filing_name and error.filing_accession:
+        source_label = f"{filing_name} | {error.filing_accession}"
+    elif error.filing_accession and error.source_name:
+        source_label = f"{error.filing_accession} | {error.source_name}"
+    elif error.filing_accession:
+        source_label = error.filing_accession
+    elif error.source_name:
+        source_label = error.source_name
+    else:
+        source_label = "General pipeline issue"
     return {
         "title": title,
         "detail": error.message,
@@ -279,6 +397,55 @@ def _summarize_error(error: StageError) -> dict[str, str | bool]:
         "stage": error.stage,
         "retryable": error.is_retryable,
         "created_at_display": _format_dt(error.created_at),
+        "created_at_relative": _relative_time(error.created_at),
+        "state": state,
+        "state_label": _issue_state_label(state),
+        "state_css": state,
+        "is_form4": _is_form4_issue(error, filing),
+        "error_class": error.error_class,
+    }
+
+
+def _summarize_errors(session: Session, errors: list[StageError]) -> list[dict[str, str | bool]]:
+    filing_map = _filing_map_for_errors(session, errors)
+    return [
+        _summarize_error(error, filing_map.get(error.filing_accession or ""))
+        for error in errors
+    ]
+
+
+def _form4_health_summary(
+    session: Session,
+    summarized_errors: list[dict[str, str | bool]],
+) -> dict[str, object]:
+    last_success_at = session.scalar(
+        select(func.max(Filing.updated_at)).where(
+            Filing.form_type.in_(tuple(FORM4_TYPES)),
+            Filing.parser_status == "success",
+        )
+    )
+    form4_rows = [row for row in summarized_errors if bool(row["is_form4"])]
+    current_count = sum(1 for row in form4_rows if row["state"] == "current")
+    recovered_count = sum(1 for row in form4_rows if row["state"] == "recovered")
+    historical_count = sum(1 for row in form4_rows if row["state"] == "historical")
+
+    if current_count:
+        status = "Needs review"
+        note = "One or more recent Form 4 filings still need operator follow-up."
+    elif last_success_at is not None:
+        status = "Healthy now"
+        note = "Recent Form 4 parsing is succeeding. Older issue records remain in the archive."
+    else:
+        status = "No successful Form 4 parse yet"
+        note = "The app has not stored a successful Form 4 parse in this runtime yet."
+
+    return {
+        "status": status,
+        "note": note,
+        "last_success_display": _format_dt(last_success_at),
+        "current_count": current_count,
+        "recovered_count": recovered_count,
+        "historical_count": historical_count,
     }
 
 
@@ -319,8 +486,13 @@ def inbox(request: Request, session: Session = Depends(get_session)):
         historical="hide",
     )
     recent_errors = session.scalars(
-        select(StageError).order_by(StageError.created_at.desc()).limit(5)
+        select(StageError).order_by(StageError.created_at.desc()).limit(30)
     ).all()
+    summarized_errors = _summarize_errors(session, recent_errors)
+    current_error_rows = [row for row in summarized_errors if row["state"] == "current"]
+    archived_error_count = len(summarized_errors) - len(current_error_rows)
+    form4_health = _form4_health_summary(session, summarized_errors)
+
     recent_runs = session.scalars(
         select(IngestRun).order_by(IngestRun.created_at.desc()).limit(6)
     ).all()
@@ -358,7 +530,8 @@ def inbox(request: Request, session: Session = Depends(get_session)):
         filings_count=filings_count,
         visible_signal_rows=visible_signal_rows[:8],
         hidden_historical_count=hidden_historical_count,
-        recent_error_rows=[_summarize_error(error) for error in recent_errors],
+        recent_error_rows=current_error_rows[:5],
+        archived_error_count=archived_error_count,
         recent_run_rows=[_summarize_run(run) for run in recent_runs],
         latest_completed_run=_summarize_run(latest_completed_run) if latest_completed_run else None,
         enabled_destinations=enabled_destinations,
@@ -370,6 +543,7 @@ def inbox(request: Request, session: Session = Depends(get_session)):
         scheduler_snapshot=scheduler_snapshot,
         worker_snapshot=worker_snapshot,
         zero_state=zero_state,
+        form4_health=form4_health,
     )
 
 
@@ -408,11 +582,12 @@ def recent_errors(request: Request, session: Session = Depends(get_session)):
     errors = session.scalars(
         select(StageError).order_by(StageError.created_at.desc()).limit(30)
     ).all()
+    summarized_errors = _summarize_errors(session, errors)
     return render_template(
         request,
         "errors.html",
         page_title="Recent Issues",
-        errors=[_summarize_error(error) for error in errors],
+        errors=summarized_errors,
     )
 
 
@@ -422,8 +597,9 @@ def advanced(request: Request, session: Session = Depends(get_session)):
         select(IngestRun).order_by(IngestRun.created_at.desc()).limit(8)
     ).all()
     recent_errors = session.scalars(
-        select(StageError).order_by(StageError.created_at.desc()).limit(8)
+        select(StageError).order_by(StageError.created_at.desc()).limit(12)
     ).all()
+    summarized_errors = _summarize_errors(session, recent_errors)
     settings = request.app.state.settings
     runtime_reference = {
         "APP_HOST": settings.app_host,
@@ -445,9 +621,10 @@ def advanced(request: Request, session: Session = Depends(get_session)):
         scheduler_snapshot=_normalize_scheduler_snapshot(request.app.state.scheduler.snapshot()),
         worker_snapshot=_normalize_worker_snapshot(request.app.state.worker.snapshot()),
         recent_run_rows=[_summarize_run(run) for run in recent_runs],
-        recent_error_rows=[_summarize_error(error) for error in recent_errors],
+        recent_error_rows=summarized_errors,
         runtime_reference=runtime_reference,
         release_info=release_info,
         release_diagnostics=diagnostics,
         release_diagnostics_summary=summarize_diagnostics(diagnostics),
+        form4_health=_form4_health_summary(session, summarized_errors),
     )

@@ -19,7 +19,7 @@ os.environ.pop("OPENAI_MODEL", None)
 
 from app.config import Settings
 from app.main import create_app
-from app.services.sec.client import FixtureSecClient
+from app.services.sec.client import FixtureSecClient, SecTextResponse
 
 
 class LenientFixtureSecClient(FixtureSecClient):
@@ -30,17 +30,28 @@ class LenientFixtureSecClient(FixtureSecClient):
             return {"filings": {"recent": {}}, "name": None, "tickers": []}
 
     def get_text(self, url: str) -> str:
+        return self.get_text_response(url).text
+
+    def get_text_response(self, url: str) -> SecTextResponse:
         try:
-            return super().get_text(url)
+            return super().get_text_response(url)
         except KeyError:
             if url.endswith(".idx"):
-                return "Description|Header|Ignored|Ignored|Ignored\n"
-            if url.endswith("output=atom"):
-                return (
+                text = "Description|Header|Ignored|Ignored|Ignored\n"
+            elif url.endswith("output=atom"):
+                text = (
                     '<?xml version="1.0" encoding="UTF-8"?>'
                     '<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
                 )
-            return ""
+            else:
+                text = ""
+            return SecTextResponse(
+                text=text,
+                status_code=200,
+                content_type="text/plain",
+                final_url=url,
+                body_length=len(text),
+            )
 
 
 def extract_csrf_token(html: str) -> str:

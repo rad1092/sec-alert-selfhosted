@@ -60,6 +60,36 @@ def seed_signal(
         session.commit()
 
 
+def seed_form4_success(*, accession: str, updated_at: datetime) -> None:
+    with open_session() as session:
+        session.add(
+            Filing(
+                accession_number=accession,
+                form_type="4",
+                is_amendment=False,
+                filed_date=updated_at.date(),
+                accepted_at=updated_at,
+                issuer_cik="0000320193",
+                issuer_ticker="AAPL",
+                issuer_name="Apple Inc.",
+                parser_status="success",
+                scoring_status="success",
+                summarization_status="success",
+                reporter_names=["Alex Buyer"],
+                normalized_payload={"owner_count": 1},
+                score=1.0,
+                confidence="medium",
+                reasons=["Form 4 purchase"],
+                summary_headline="Recovered Form 4 filing",
+                summary_context="Recovered parsing after a prior issue.",
+                detail_url="https://example.test/form4-detail",
+                source_url="https://example.test/form4.xml",
+                updated_at=updated_at,
+            )
+        )
+        session.commit()
+
+
 def test_inbox_zero_states_and_local_notification_warning(client):
     response = client.get("/")
     assert response.status_code == 200
@@ -167,9 +197,82 @@ def test_navigation_restructures_to_inbox_notifications_and_advanced(client):
 
     errors_response = client.get("/errors")
     assert errors_response.status_code == 200
-    assert "Recent problems the app recorded" in errors_response.text
+    assert "Recorded pipeline issues" in errors_response.text
 
     settings_response = client.get("/settings")
     assert settings_response.status_code == 200
     assert "Technical Reference" in settings_response.text
     assert "Doctor summary" in settings_response.text
+
+
+def test_issue_archive_uses_current_recovered_historical_states(client):
+    seed_watchlist_entry()
+    now = datetime.now(UTC)
+    recovered_error_time = now - timedelta(hours=6)
+    current_error_time = now - timedelta(hours=2)
+    historical_error_time = now - timedelta(days=3)
+
+    seed_form4_success(
+        accession="0000320193-26-000210",
+        updated_at=recovered_error_time + timedelta(minutes=20),
+    )
+
+    with open_session() as session:
+        session.add_all(
+            [
+                StageError(
+                    stage="form4_accession",
+                    source_name="latest_ownership",
+                    filing_accession="0000320193-26-000210",
+                    error_class="OwnershipXmlParseError",
+                    message="Recovered parse failure.",
+                    is_retryable=False,
+                    created_at=recovered_error_time,
+                    updated_at=recovered_error_time,
+                ),
+                StageError(
+                    stage="form4_accession",
+                    source_name="latest_ownership",
+                    filing_accession="0000320193-26-000211",
+                    error_class="SecTransientResponseError",
+                    message="Current SEC retryable response.",
+                    is_retryable=True,
+                    created_at=current_error_time,
+                    updated_at=current_error_time,
+                ),
+                StageError(
+                    stage="form4_xml_locator",
+                    source_name="form4_detail",
+                    filing_accession="0000320193-26-000212",
+                    error_class="MissingXmlError",
+                    message="Historical XML locator failure.",
+                    is_retryable=False,
+                    created_at=historical_error_time,
+                    updated_at=historical_error_time,
+                ),
+            ]
+        )
+        session.commit()
+
+    inbox_response = client.get("/")
+    assert inbox_response.status_code == 200
+    assert "Form 4 Health" in inbox_response.text
+    assert "Needs review" in inbox_response.text
+    assert "0000320193-26-000211" in inbox_response.text
+    assert "0000320193-26-000210" not in inbox_response.text
+    assert "0000320193-26-000212" not in inbox_response.text
+    assert "No current blocking issues" not in inbox_response.text
+
+    errors_response = client.get("/errors")
+    assert errors_response.status_code == 200
+    assert "0000320193-26-000210" in errors_response.text
+    assert "0000320193-26-000211" in errors_response.text
+    assert "0000320193-26-000212" in errors_response.text
+    assert "Current" in errors_response.text
+    assert "Recovered" in errors_response.text
+    assert "Historical" in errors_response.text
+
+    advanced_response = client.get("/advanced")
+    assert advanced_response.status_code == 200
+    assert "Trust summary" in advanced_response.text
+    assert "Last successful parse" in advanced_response.text

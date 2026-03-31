@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+import httpx
 from sqlalchemy import select
 
 from app.config import Settings
@@ -14,8 +16,14 @@ from app.services.alerts import AlertDeliveryService
 from app.services.broker import BrokerPriority, SecRequestBroker
 from app.services.scoring.eight_k import EightKScorer
 from app.services.scoring.form4 import Form4Scorer
+from app.services.sec.client import SecTextResponse
 from app.services.sec.eight_k import EightKParser, locate_primary_eight_k_document_url
-from app.services.sec.form4 import Form4Parser, locate_ownership_xml, parse_form4_detail_page
+from app.services.sec.form4 import (
+    Form4Parser,
+    OwnershipXmlParseError,
+    ordered_ownership_xml_candidates,
+    parse_form4_detail_page,
+)
 from app.services.sec.indexes import MasterIndexRow, backfill_business_days, previous_business_days
 from app.services.sec.latest_ownership import (
     INGESTIBLE_FORM4_TYPES,
@@ -47,6 +55,17 @@ LIVE_FORM4_CURSOR_FILTER = "feed:owner-only:page1"
 REPAIR_CURSOR_SOURCE = "repair-daily-master"
 P3_CHUNK_SIZE = 25
 REPAIR_FORM_TYPES = {"8-K", "8-K/A", "4", "4/A"}
+RECENT_FORM4_REVALIDATION_DAYS = 7
+
+
+@dataclass(slots=True)
+class Form4ProcessingError(Exception):
+    error_class: str
+    message: str
+    retryable: bool = False
+
+    def __str__(self) -> str:
+        return self.message
 
 
 def _utc_or_min(value: datetime | None) -> datetime:
@@ -79,6 +98,88 @@ def _form4_tenb5_one_context(normalized_payload: dict[str, Any] | None) -> dict[
         "mentioned_in_footnotes": tenb5_one.get("mentioned_in_footnotes"),
         "adoption_date": tenb5_one.get("adoption_date"),
     }
+
+
+def _compact_body_prefix(text: str, *, limit: int = 96) -> str:
+    snippet = " ".join(text.strip().split())
+    if len(snippet) <= limit:
+        return snippet
+    return f"{snippet[:limit]}..."
+
+
+def _payload_signature(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8", errors="ignore")).hexdigest()[:12]
+
+
+def _format_response_context(response: SecTextResponse) -> str:
+    prefix = _compact_body_prefix(response.text)
+    return (
+        f"url={response.final_url} status={response.status_code} "
+        f"content_type={response.content_type or 'unknown'} body_length={response.body_length} "
+        f"body_sig={_payload_signature(response.text)} prefix={prefix!r}"
+    )
+
+
+def _looks_like_xml_response(response: SecTextResponse) -> bool:
+    content_type = (response.content_type or "").lower()
+    body = response.text.lstrip()
+    body_lower = body[:256].lower()
+    if "xml" in content_type:
+        return True
+    if body_lower.startswith("<?xml") or body_lower.startswith("<ownershipdocument"):
+        return True
+    return False
+
+
+def _non_xml_retryable(response: SecTextResponse) -> bool:
+    body = response.text[:256].lower()
+    transient_markers = (
+        "access denied",
+        "undeclared automated tool",
+        "request rate threshold",
+        "temporarily unavailable",
+        "service unavailable",
+    )
+    return any(marker in body for marker in transient_markers) or not response.text.strip()
+
+
+def _classify_transport_error(exc: Exception, *, url: str) -> Form4ProcessingError:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        response = SecTextResponse(
+            text=exc.response.text,
+            status_code=status_code,
+            content_type=exc.response.headers.get("content-type"),
+            final_url=str(exc.response.url),
+            body_length=len(exc.response.text),
+        )
+        if status_code in {403, 429, 500, 502, 503, 504}:
+            return Form4ProcessingError(
+                "SecTransientResponseError",
+                f"SEC returned a retryable response while fetching {url}. "
+                f"{_format_response_context(response)}",
+                retryable=True,
+            )
+        if status_code == 404:
+            return Form4ProcessingError(
+                "SecPublicationLagError",
+                f"The SEC filing document was not yet visible when fetched from {url}. "
+                f"{_format_response_context(response)}",
+                retryable=True,
+            )
+        return Form4ProcessingError(
+            "SecHttpStatusError",
+            f"SEC returned an unexpected HTTP status while fetching {url}. "
+            f"{_format_response_context(response)}",
+            retryable=False,
+        )
+    if isinstance(exc, RuntimeError):
+        return Form4ProcessingError(
+            "SecTransportError",
+            f"SEC request failed while fetching {url}: {exc}",
+            retryable=True,
+        )
+    return Form4ProcessingError(exc.__class__.__name__, str(exc), retryable=False)
 
 
 @dataclass(slots=True)
@@ -777,13 +878,89 @@ class Form4IngestService(BaseIngestService):
         )
         return enqueue_result.accepted
 
+    def _candidate_urls(
+        self,
+        detail_metadata,
+        *,
+        preferred_url: str | None = None,
+    ) -> list[str]:
+        urls: list[str] = []
+        seen: set[str] = set()
+
+        def add(url: str | None) -> None:
+            if not url or url in seen:
+                return
+            seen.add(url)
+            urls.append(url)
+
+        add(preferred_url)
+        for document in ordered_ownership_xml_candidates(detail_metadata):
+            add(document.url)
+        return urls
+
+    def _load_form4_candidate(
+        self,
+        *,
+        detail_html: str,
+        detail_metadata,
+        preferred_url: str | None = None,
+    ):
+        candidate_urls = self._candidate_urls(detail_metadata, preferred_url=preferred_url)
+        if not candidate_urls:
+            return None
+
+        last_error: Form4ProcessingError | None = None
+        total_attempts = len(candidate_urls)
+        for position, xml_url in enumerate(candidate_urls, start=1):
+            try:
+                ownership_response = self.sec_client.get_text_response(xml_url)
+            except Exception as exc:
+                last_error = _classify_transport_error(exc, url=xml_url)
+                continue
+
+            if not _looks_like_xml_response(ownership_response):
+                retryable = _non_xml_retryable(ownership_response)
+                error_class = (
+                    "SecInterceptionBodyError" if retryable else "NonXmlResponseError"
+                )
+                last_error = Form4ProcessingError(
+                    error_class,
+                    (
+                        "The ownership XML candidate returned a non-XML body. "
+                        f"attempt={position}/{total_attempts} "
+                        f"{_format_response_context(ownership_response)}"
+                    ),
+                    retryable=retryable,
+                )
+                continue
+
+            try:
+                parsed = self.parser.parse(detail_html, ownership_response.text)
+                return parsed, xml_url
+            except OwnershipXmlParseError as exc:
+                last_error = Form4ProcessingError(
+                    "OwnershipXmlParseError",
+                    (
+                        "The ownership XML candidate fetched successfully, but XML parsing failed. "
+                        f"attempt={position}/{total_attempts} "
+                        f"{_format_response_context(ownership_response)}"
+                    ),
+                    retryable=False,
+                )
+                logger.debug("Form 4 XML parse failed for %s: %s", xml_url, exc)
+
+        if last_error is not None:
+            raise last_error
+        return None
+
     def process_accession(self, payload: dict[str, str | None]) -> None:
         candidate = OwnershipCandidate.from_payload(payload)
         accession = candidate.accession_number
         cursor_source_name = payload.get("cursor_source_name")
         cursor_filter_key = payload.get("cursor_filter_key")
         try:
-            detail_html = self.sec_client.get_text(candidate.detail_url)
+            detail_response = self.sec_client.get_text_response(candidate.detail_url)
+            detail_html = detail_response.text
             detail_metadata = parse_form4_detail_page(
                 detail_html,
                 detail_url=candidate.detail_url,
@@ -801,13 +978,15 @@ class Form4IngestService(BaseIngestService):
             if confirmed.form_type not in INGESTIBLE_FORM4_TYPES:
                 return
 
-            xml_url = locate_ownership_xml(detail_metadata)
-            if xml_url is None:
+            candidate_result = self._load_form4_candidate(
+                detail_html=detail_html,
+                detail_metadata=detail_metadata,
+            )
+            if candidate_result is None:
                 self._handle_missing_xml(confirmed, detail_metadata)
                 return
 
-            ownership_xml = self.sec_client.get_text(xml_url)
-            parsed = self.parser.parse(detail_html, ownership_xml)
+            parsed, xml_url = candidate_result
             issuer_cik = normalize_cik(parsed.issuer_cik or detail_metadata.issuer_cik)
             if issuer_cik is None:
                 self._record_error(
@@ -829,6 +1008,16 @@ class Form4IngestService(BaseIngestService):
                 deliver=True,
                 force_reparse=False,
             )
+        except Form4ProcessingError as exc:
+            self._record_error(
+                stage="form4_accession",
+                source_name="latest_ownership",
+                filing_accession=accession,
+                error_class=exc.error_class,
+                message=exc.message,
+                is_retryable=exc.retryable,
+            )
+            raise
         except Exception as exc:
             self._record_error(
                 stage="form4_accession",
@@ -856,10 +1045,15 @@ class Form4IngestService(BaseIngestService):
 
         try:
             self._clear_openai_summary_state(filing_id)
-            detail_html = self.sec_client.get_text(detail_url)
+            detail_response = self.sec_client.get_text_response(detail_url)
+            detail_html = detail_response.text
             detail_metadata = parse_form4_detail_page(detail_html, detail_url=detail_url)
-            xml_url = existing_source_url or locate_ownership_xml(detail_metadata)
-            if xml_url is None:
+            candidate_result = self._load_form4_candidate(
+                detail_html=detail_html,
+                detail_metadata=detail_metadata,
+                preferred_url=existing_source_url,
+            )
+            if candidate_result is None:
                 self._record_error(
                     stage="reparse",
                     source_name="form4_detail",
@@ -870,8 +1064,7 @@ class Form4IngestService(BaseIngestService):
                 self._mark_filing_failed(filing_id)
                 return
 
-            ownership_xml = self.sec_client.get_text(xml_url)
-            parsed = self.parser.parse(detail_html, ownership_xml)
+            parsed, xml_url = candidate_result
             candidate = OwnershipCandidate(
                 accession_number=accession_number,
                 form_type=form_type,
@@ -888,6 +1081,17 @@ class Form4IngestService(BaseIngestService):
                 force_reparse=True,
                 existing_filing_id=filing_id,
             )
+        except Form4ProcessingError as exc:
+            self._record_error(
+                stage="reparse",
+                source_name="manual-reparse",
+                filing_accession=accession_number,
+                error_class=exc.error_class,
+                message=exc.message,
+                is_retryable=exc.retryable,
+            )
+            self._mark_filing_failed(filing_id)
+            raise
         except Exception as exc:
             self._record_error(
                 stage="reparse",
@@ -1288,6 +1492,80 @@ class RecoveryService(BaseIngestService):
         )
         return True
 
+    def _revalidate_recent_form4_failures(self) -> tuple[int, int]:
+        cutoff = datetime.now(UTC) - timedelta(days=RECENT_FORM4_REVALIDATION_DAYS)
+        with open_session() as session:
+            recent_errors = session.scalars(
+                select(StageError)
+                .where(
+                    StageError.created_at >= cutoff,
+                    StageError.filing_accession.is_not(None),
+                    StageError.stage.in_(("form4_accession", "form4_xml_locator")),
+                )
+                .order_by(StageError.created_at.desc())
+            ).all()
+
+            latest_by_accession: dict[str, StageError] = {}
+            for error in recent_errors:
+                if error.filing_accession and error.filing_accession not in latest_by_accession:
+                    latest_by_accession[error.filing_accession] = error
+
+            filings = session.scalars(
+                select(Filing).where(Filing.accession_number.in_(tuple(latest_by_accession)))
+            ).all()
+            filing_map = {filing.accession_number: filing for filing in filings}
+
+        attempted = 0
+        recovered = 0
+        for accession, error in latest_by_accession.items():
+            filing = filing_map.get(accession)
+            if (
+                filing is not None
+                and filing.form_type in INGESTIBLE_FORM4_TYPES
+                and filing.parser_status == "success"
+                and filing.updated_at > error.created_at
+            ):
+                recovered += 1
+                continue
+
+            detail_url = filing.detail_url if filing is not None else None
+            if not detail_url:
+                detail_url = self._detail_url_from_accession(accession)
+
+            candidate = OwnershipCandidate(
+                accession_number=accession,
+                form_type=(filing.form_type if filing is not None else "4"),
+                detail_url=detail_url,
+                filed_date=filing.filed_date if filing is not None else None,
+                accepted_at=filing.accepted_at if filing is not None else None,
+            )
+            attempted += 1
+            try:
+                self.form4_service.process_accession(candidate.to_payload())
+            except Exception:
+                continue
+
+            with open_session() as session:
+                refreshed = session.scalar(
+                    select(Filing).where(Filing.accession_number == accession)
+                )
+                if (
+                    refreshed is not None
+                    and refreshed.form_type in INGESTIBLE_FORM4_TYPES
+                    and refreshed.parser_status == "success"
+                    and refreshed.updated_at > error.created_at
+                ):
+                    recovered += 1
+        return attempted, recovered
+
+    def _detail_url_from_accession(self, accession_number: str) -> str:
+        cik = str(int(accession_number[:10]))
+        accession_nodash = accession_number.replace("-", "")
+        return (
+            f"https://www.sec.gov/Archives/edgar/data/{cik}/"
+            f"{accession_nodash}/{accession_number}-index.html"
+        )
+
     def process_repair_chunk(self, payload: dict[str, Any]) -> None:
         self._process_index_chunk(payload, mode="repair")
 
@@ -1310,10 +1588,16 @@ class RecoveryService(BaseIngestService):
 
             if current_day is None:
                 if not remaining_days:
+                    revalidated = recovered = 0
+                    if mode == "repair":
+                        revalidated, recovered = self._revalidate_recent_form4_failures()
                     self._mark_run_status(
                         run_id,
                         status="completed",
-                        notes=f"matched={matched} enqueued={enqueued}",
+                        notes=(
+                            f"matched={matched} enqueued={enqueued} "
+                            f"revalidated_form4={revalidated} recovered_form4={recovered}"
+                        ),
                     )
                     self.broker.finish_run(run_key)
                     return
@@ -1396,10 +1680,16 @@ class RecoveryService(BaseIngestService):
                 )
                 return
 
+            revalidated = recovered = 0
+            if mode == "repair":
+                revalidated, recovered = self._revalidate_recent_form4_failures()
             self._mark_run_status(
                 run_id,
                 status="completed",
-                notes=f"matched={matched} enqueued={enqueued}",
+                notes=(
+                    f"matched={matched} enqueued={enqueued} "
+                    f"revalidated_form4={revalidated} recovered_form4={recovered}"
+                ),
             )
             self.broker.finish_run(run_key)
         except Exception as exc:
