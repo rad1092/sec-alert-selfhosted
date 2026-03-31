@@ -27,7 +27,10 @@ CHANNEL_METADATA = {
     "smtp": {
         "title": "SMTP Email",
         "config_label": "env:SMTP_TO",
-        "description": "SMTP recipient and credentials come from env only.",
+        "description": (
+            "SMTP recipients and credentials come from env only; "
+            "SMTP_TO can be comma-separated."
+        ),
     },
 }
 

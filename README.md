@@ -1,121 +1,136 @@
 # SEC Alert Self-Hosted
 
-Self-hosted SEC alert application with a localhost-first, BYOK posture.
+Self-hosted SEC signal inbox for a focused watchlist.
 
-## Current scope
+This repository is being prepared for a first paid, one-time-purchase self-hosted release. The product is intentionally narrow: it helps one operator monitor a focused list of names, understand why a filing was flagged, and optionally route signals to Slack, webhooks, or SMTP email.
 
-This repository currently implements `Phase 6: optional OpenAI rewrite on top of deterministic SEC signals`.
+## Product promise
 
-- FastAPI + Jinja2 app shell
-- SQLite models and startup validation
-- localhost-only runtime guard
-- single-process lock to prevent duplicate schedulers
-- shared in-memory SEC request broker with queue metrics
-- watchlist CRUD
-- `company_tickers.json` resolver with manual CIK override precedence
-- manual broker-backed `Run 8-K Ingest Now` path for `8-K` / `8-K/A`
-- manual broker-backed `Run Form 4 Ingest Now` path for `4` / `4/A`
-- scheduler-enqueued live 8-K polling with overlap recheck
-- scheduler-enqueued live Form 4 ownership discovery with overlap recheck
-- rolling repair over the last 2 business days using EDGAR daily master index files
-- automatic and manual 30-day backfill for newly enabled watchlist entries
-- deterministic 8-K parsing, scoring, summary generation, and multi-channel delivery
-- ownership-first Latest Filings/RSS discovery for Form 4 candidates
-- XML-first Form 4 parsing with deterministic scoring, summary generation, and multi-channel delivery
-- filing detail page with broker-backed reparse
-- manual `Run repair now` and watchlist `Backfill now` controls
-- global Slack / webhook / SMTP destinations with test-send
-- optional OpenAI rewrite for summary text fields only
+- Self-hosted and localhost-first.
+- BYOK and environment-variable driven.
+- Single-user and single-process in the supported release.
+- SQLite-first and Docker-first.
+- Near-real-time, not instant.
+- SEC-friendly request behavior.
+- Deterministic scoring first, with optional OpenAI rewrite for presentation text only.
 
-The product is **near-real-time**, not instant. SEC filings usually become visible within a few minutes, but SEC availability can lag longer under load. See the SEC [Webmaster FAQ](https://www.sec.gov/about/webmaster-frequently-asked-questions), [EDGAR APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces), and [Accessing EDGAR Data](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data).
+## What it does
 
-## Security posture
+- Watchlist-based `8-K` and `Form 4` monitoring.
+- Deterministic scoring with inspectable reasons.
+- Filing detail pages with SEC source links.
+- Optional Slack, webhook, and SMTP delivery.
+- Repair and backfill for missed filings.
+- Local Docker runtime for simple self-hosted deployment.
 
-- `APP_HOST` must stay `127.0.0.1` or `localhost`
-- `APP_ALLOW_CONTAINER_BIND=true` is only for the Docker container's internal `0.0.0.0` bind
-- `SEC_USER_AGENT` is required
-- secrets come from environment variables only
-- secrets are not stored in the database
-- telemetry is off by default
-- CORS is off by default
-- this project is single-user and single-process in v1
+## What it is not
 
-## Quick start
+- Not a SaaS product.
+- Not a multi-user team platform.
+- Not a broad filing research terminal.
+- Not an insider-only speed terminal.
+- Not investment, tax, or legal advice.
 
-1. Create the virtual environment:
+## Screenshots
+
+The repository currently includes clearly labeled placeholders. Replace them with real local captures before publishing the first paid release artifact.
+
+See [docs/SCREENSHOT_CAPTURE.md](docs/SCREENSHOT_CAPTURE.md) for the capture checklist.
+
+![Inbox placeholder](docs/screenshots/inbox-placeholder.svg)
+
+Inbox: current signals, watchlist state, and next-step actions.
+
+![Filing detail placeholder](docs/screenshots/filing-detail-placeholder.svg)
+
+Filing detail: what happened, why it was flagged, and how to verify it against the SEC.
+
+![Docker install placeholder](docs/screenshots/install-docker-placeholder.svg)
+
+Docker install: the supported buyer path for the first paid release.
+
+## Fast buyer path
+
+If you want the shortest path from zero to first useful signal:
+
+1. Copy `.env.example` to `.env`.
+2. Fill in `SEC_USER_AGENT`.
+3. Run `make doctor`.
+4. Start with Docker using `docker compose up --build`.
+5. Open `http://127.0.0.1:8000`.
+6. Add one ticker to the watchlist.
+7. Run a manual 8-K or Form 4 check.
+8. Open the first filing detail page.
+
+Start with:
+
+- [Buyer Quickstart](docs/BUYER_QUICKSTART.md)
+- [Docker Install](docs/INSTALL_DOCKER.md)
+- [Upgrade Guide](docs/UPGRADE.md)
+- [Backup and Restore](docs/BACKUP_RESTORE.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+
+## Release and support docs
+
+- [Paid Release Gap Analysis](docs/PAID_RELEASE_GAP_ANALYSIS.md)
+- [Commercial License](COMMERCIAL_LICENSE.md)
+- [Support](SUPPORT.md)
+- [Security](SECURITY.md)
+- [Privacy](PRIVACY.md)
+- [Disclaimer](DISCLAIMER.md)
+- [Changelog](CHANGELOG.md)
+- [Roadmap](ROADMAP.md)
+- [Versioning](VERSIONING.md)
+- [Release Checklist](RELEASE_CHECKLIST.md)
+- [GitHub Metadata](docs/GITHUB_METADATA.md)
+
+## Runtime notes
+
+- `Inbox` shows what likely needs review now.
+- `All Signals` is the archive/triage view.
+- `Watchlist` controls what is monitored.
+- `Notifications` controls where signals go.
+- `Advanced` holds diagnostics, runtime posture, repair controls, and raw issue context.
+- OpenAI, when enabled, only rewrites summary presentation text and never changes deterministic score, confidence, reasons, or alert eligibility.
+
+## Notification notes
+
+- Slack remains the reference delivery path.
+- Webhook and SMTP follow the same delivery-attempt logging model.
+- `SMTP_TO` supports a comma-separated recipient list.
+- If no destination is configured, signals remain visible locally in the app.
+
+## Release boundary
+
+- This project is being packaged as a buyer-owned self-hosted runtime, not a managed hosted service.
+- Secrets stay in `.env`.
+- External API costs and credentials remain operator-controlled.
+- Official support stays with the documented SQLite-first, Docker-friendly runtime.
+- Current watchlist envelope remains conservative:
+  - `25` validated
+  - `50` hard cap
+  - `100` unsupported
+
+## Operator commands
 
 ```powershell
-uv venv .venv --python 3.12
+make doctor
+make smoke
+make backup
+make restore BACKUP_ARCHIVE=backups\sec-alert-backup-YYYYMMDD-HHMMSS.zip
+make release-bundle VERSION=v0.2.0
 ```
 
-2. Install dependencies:
+If `make` is not installed on your machine, run the underlying CLI directly:
 
 ```powershell
-uv sync --python 3.12
+uv run --python 3.12 python -m app.cli.release doctor
+uv run --python 3.12 python -m app.cli.release smoke
+uv run --python 3.12 python -m app.cli.release backup
+uv run --python 3.12 python -m app.cli.release restore --archive backups\sec-alert-backup-YYYYMMDD-HHMMSS.zip
+uv run --python 3.12 python -m app.cli.release release-bundle --version v0.2.0
 ```
 
-3. Copy `.env.example` to `.env` and set `SEC_USER_AGENT`.
+## Manual GitHub metadata
 
-4. Run locally with one worker only:
-
-```powershell
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
-```
-
-5. Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
-6. Add a watchlist entry, configure one or more global destinations, then use either `Run 8-K Ingest Now` or `Run Form 4 Ingest Now` from the dashboard.
-
-The app starts in a manual-only posture unless `SCHEDULER_ENABLED=true`. Scheduler-enabled runs add live 8-K polling, live Form 4 discovery, and nightly recent repair on top of the manual controls.
-
-## Development notes
-
-- Keep `SCHEDULER_ENABLED=false` for reload/test workflows.
-- Creating or re-enabling a watchlist entry automatically queues a 30-day background backfill.
-- `SEC_LIVE_8K_OVERLAP_ROWS` defaults to `20` and tunes how many recent filtered 8-K rows the live poller rescans each cycle.
-- `ALERT_WEBHOOK_URL` is a single global webhook endpoint and must use `https` unless `LOCALHOST_WEBHOOK_TEST_MODE=true` allows localhost http for testing.
-- `SMTP_TO` is a single global Phase 5 recipient; SMTP credentials remain env-only.
-- OpenAI rewrite is active only when both `OPENAI_API_KEY` and `OPENAI_MODEL` are set.
-- Destination rows store metadata only. Secrets and endpoints stay in `.env`.
-- The validated watchlist envelope is `25` issuers. `50` is the current hard cap.
-- `100` issuers is not a current support claim.
-- External API costs and infrastructure uptime remain the operator's responsibility.
-
-## Optional OpenAI Rewrite
-
-OpenAI rewrite is optional. Deterministic scoring remains authoritative, and OpenAI is used only to rewrite summary text fields.
-
-- The app uses the Responses API and requests structured output via `text.format`.
-- Requests are sent with `store=false` as an implementation policy.
-- If the configured model is unsupported, unavailable, invalid, or returns output that fails schema validation, the app falls back to deterministic summaries automatically.
-- OpenAI failure never blocks ingestion, parsing, scoring, alert creation, or delivery.
-- Using OpenAI sends filing-derived summary input to OpenAI. API usage costs are the operator's responsibility.
-- Use a pinned snapshot model for stable behavior. Current examples: `gpt-5-mini-2025-08-07` and `gpt-4.1-mini-2025-04-14`.
-
-## Docker
-
-The included Docker files are intended for local self-hosting smoke and runtime use, including Docker Desktop on Windows.
-
-- `docker compose` publishes the app on `127.0.0.1:8000` only
-- the container binds `0.0.0.0` internally so Docker port publishing works, but host exposure is still limited to localhost
-- the compose file does not live-mount the project source tree; only `./data` is persisted
-- scheduler behavior remains env-driven, so `SCHEDULER_ENABLED=false` keeps the app in manual-only mode
-
-Run Docker locally with:
-
-```powershell
-Copy-Item .env.example .env
-# Set SEC_USER_AGENT in .env, then:
-docker compose up --build
-```
-
-This Docker path is for smoke/self-host runtime stability. A hot-reload/live-mount development compose setup is not included in v1.
-
-## Commands
-
-```powershell
-make test
-make lint
-make fmt
-make up
-make down
-```
+Repository description, topics, About text, and social preview still need to be applied manually in GitHub. The exact copy to paste is documented in [docs/GITHUB_METADATA.md](docs/GITHUB_METADATA.md).

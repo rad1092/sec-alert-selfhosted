@@ -92,7 +92,7 @@
       {% for run in recent_run_rows %}
       <article class="issue-item">
         <strong>{{ run.label }}</strong>
-        <p>{{ run.status }} · {{ run.finished_at_display }}</p>
+        <p>{{ run.status }} • {{ run.finished_at_display }}</p>
         <p class="muted">{{ run.note }}</p>
       </article>
       {% endfor %}
@@ -116,7 +116,7 @@
       <article class="issue-item">
         <strong>{{ error.title }}</strong>
         <p>{{ error.help_text }}</p>
-        <p class="muted">{{ error.source_label }} · {{ error.created_at_display }}</p>
+        <p class="muted">{{ error.source_label }} • {{ error.created_at_display }}</p>
       </article>
       {% endfor %}
     </div>
@@ -126,29 +126,71 @@
   </article>
 </section>
 
+<section class="grid two-up">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Support Diagnostics</p>
+        <h2>Doctor summary</h2>
+      </div>
+    </div>
+    <p>
+      {{ release_diagnostics_summary.pass }} pass •
+      {{ release_diagnostics_summary.warn }} warn •
+      {{ release_diagnostics_summary.fail }} fail
+    </p>
+    <div class="stack issue-stack">
+      {% for check in release_diagnostics %}
+      <article class="issue-item issue-{{ check.status }}">
+        <strong>{{ check.title }}</strong>
+        <p>{{ check.message }}</p>
+        {% if check.detail %}
+        <p class="muted">{{ check.detail }}</p>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Runtime Reference</p>
+        <h2>Selected settings</h2>
+      </div>
+      <a href="/settings">Open settings</a>
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Setting</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for key, value in runtime_reference.items() %}
+        <tr>
+          <td>{{ key }}</td>
+          <td>{{ value }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+
 <section class="card">
   <div class="section-header">
     <div>
-      <p class="eyebrow">Runtime Reference</p>
-      <h2>Selected settings</h2>
+      <p class="eyebrow">Buyer Support</p>
+      <h2>Install and help checklist</h2>
     </div>
-    <a href="/settings">Open settings</a>
   </div>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Setting</th>
-        <th>Value</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for key, value in runtime_reference.items() %}
-      <tr>
-        <td>{{ key }}</td>
-        <td>{{ value }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="stack compact-list">
+    <p>Install with Docker or local <code>uvicorn</code>, then confirm <code>/healthz</code>, <code>/settings</code>, and <code>/advanced</code> all load.</p>
+    <p>Set <code>SEC_USER_AGENT</code> first. Use <code>SMTP_TO</code> as a comma-separated recipient list if email delivery is enabled.</p>
+    <p>If you need help, share the install method, the relevant <code>/settings</code> values, and the latest issue from <code>/errors</code>.</p>
+    <p>For backup or restore questions, start with the <code>data/</code> directory and the SQLite database file shown in settings.</p>
+  </div>
 </section>
 {% endblock %}

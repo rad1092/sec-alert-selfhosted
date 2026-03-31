@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import smtplib
 from email.message import EmailMessage
+from email.utils import getaddresses
 
 from app.config import Settings
 from app.models import Destination
@@ -28,7 +29,7 @@ class SmtpNotifier:
                 self.settings.smtp_host,
                 self.settings.smtp_port,
                 self.settings.smtp_from,
-                self.settings.smtp_to,
+                self._recipient_list(),
             ]
         )
 
@@ -56,14 +57,23 @@ class SmtpNotifier:
         if validation_error is not None:
             return validation_error
 
+        recipients = self._recipient_list()
+        if not recipients:
+            return NotificationResult(
+                status="failed",
+                detail="SMTP_TO must contain at least one recipient.",
+                retryable=False,
+                error_class="MissingConfiguration",
+            )
+
         message = EmailMessage()
         message["From"] = self.settings.smtp_from or ""
-        message["To"] = self.settings.smtp_to or ""
+        message["To"] = ", ".join(recipients)
         message["Subject"] = self._build_subject(payload)
         message.set_content(self._build_body(payload))
 
         try:
-            self._send(message)
+            self._send(message, recipients)
         except smtplib.SMTPNotSupportedError:
             return NotificationResult(
                 status="failed",
@@ -130,7 +140,17 @@ class SmtpNotifier:
             )
         return None
 
-    def _send(self, message: EmailMessage) -> None:
+    def _recipient_list(self) -> list[str]:
+        raw_value = self.settings.smtp_to or ""
+        normalized = raw_value.replace(";", ",").replace("\n", ",").replace("\r", ",")
+        parsed = []
+        for _name, addr in getaddresses([normalized]):
+            cleaned = addr.strip()
+            if cleaned and "@" in cleaned:
+                parsed.append(cleaned)
+        return list(dict.fromkeys(parsed))
+
+    def _send(self, message: EmailMessage, recipients: list[str]) -> None:
         host = self.settings.smtp_host or ""
         port = self.settings.smtp_port or 0
         username = (
@@ -150,7 +170,7 @@ class SmtpNotifier:
                 smtp.ehlo()
                 if username and password:
                     smtp.login(username, password)
-                smtp.send_message(message)
+                smtp.send_message(message, to_addrs=recipients)
             return
 
         with self._smtp_factory(host, port, timeout=10) as smtp:
@@ -162,7 +182,7 @@ class SmtpNotifier:
                 raise smtplib.SMTPNotSupportedError("STARTTLS is required for authenticated SMTP.")
             if username and password:
                 smtp.login(username, password)
-            smtp.send_message(message)
+            smtp.send_message(message, to_addrs=recipients)
 
     def _build_subject(self, payload: dict) -> str:
         issuer = payload.get("ticker") or payload.get("issuer_name") or "Issuer"

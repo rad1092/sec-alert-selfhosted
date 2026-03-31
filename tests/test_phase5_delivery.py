@@ -102,10 +102,10 @@ class FakeSMTPConnection:
             raise self.login_error
         self.login_calls.append((username, password))
 
-    def send_message(self, message):
+    def send_message(self, message, to_addrs=None):
         if self.send_error is not None:
             raise self.send_error
-        self.sent_messages.append(message)
+        self.sent_messages.append({"message": message, "to_addrs": to_addrs})
 
 
 def make_smtp_factories(
@@ -335,6 +335,7 @@ def test_smtp_test_send_success_uses_ssl_path_and_logs_attempt(tmp_path: Path):
         assert not plain_connections
         assert len(ssl_connections) == 1
         assert len(ssl_connections[0].sent_messages) == 1
+        assert ssl_connections[0].sent_messages[0]["to_addrs"] == ["ops@example.test"]
         with open_session() as session:
             attempts = session.query(DeliveryAttempt).all()
             assert len(attempts) == 1
@@ -366,6 +367,35 @@ def test_smtp_non_local_authenticated_without_starttls_fails_closed(tmp_path: Pa
     assert result.status == "failed"
     assert result.retryable is False
     assert result.error_class == "SMTPNotSupportedError"
+
+
+def test_smtp_accepts_comma_separated_recipients(tmp_path: Path):
+    settings = make_settings(
+        tmp_path,
+        SMTP_HOST="smtp.example.test",
+        SMTP_PORT=465,
+        SMTP_FROM="alerts@example.test",
+        SMTP_TO="ops@example.test, alerts@example.test",
+    )
+    smtp_factory, smtp_ssl_factory, _plain_connections, ssl_connections = make_smtp_factories()
+    notifier = SmtpNotifier(
+        settings,
+        smtp_factory=smtp_factory,
+        smtp_ssl_factory=smtp_ssl_factory,
+    )
+    destination = Destination(name="SMTP", destination_type="smtp", enabled=True)
+
+    result = notifier.send_test_message(destination)
+
+    assert result.status == "sent"
+    assert len(ssl_connections) == 1
+    assert ssl_connections[0].sent_messages[0]["to_addrs"] == [
+        "ops@example.test",
+        "alerts@example.test",
+    ]
+    assert ssl_connections[0].sent_messages[0]["message"]["To"] == (
+        "ops@example.test, alerts@example.test"
+    )
 
 
 def test_multichannel_delivery_keeps_ingest_success_and_is_idempotent(tmp_path: Path):

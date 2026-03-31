@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-label="Inbox screenshot placeholder">
+  <rect width="1200" height="700" rx="28" fill="#f7f2e8"/>
+  <rect x="48" y="48" width="1104" height="604" rx="24" fill="#fffdf7" stroke="#d8c9ad" stroke-width="3"/>
+  <text x="88" y="130" fill="#1d1a16" font-family="Georgia, serif" font-size="54" font-weight="700">Inbox screenshot placeholder</text>
+  <text x="88" y="190" fill="#5f5648" font-family="Arial, sans-serif" font-size="28">Replace with a real capture from the local app</text>
+  <text x="88" y="260" fill="#1d1a16" font-family="Arial, sans-serif" font-size="30">Show:</text>
+  <text x="170" y="260" fill="#5f5648" font-family="Arial, sans-serif" font-size="30">watchlist, recent signals, notifications state, next step</text>
+  <rect x="88" y="320" width="720" height="210" rx="18" fill="#efe7d8" stroke="#d8c9ad"/>
+  <text x="120" y="390" fill="#7a6b57" font-family="Arial, sans-serif" font-size="34">Drop in the real Inbox screenshot here</text>
+  <text x="120" y="440" fill="#7a6b57" font-family="Arial, sans-serif" font-size="24">This placeholder exists so the README can already use a relative path.</text>
+</svg>

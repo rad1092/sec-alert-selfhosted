@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-label="Docker install screenshot placeholder">
+  <rect width="1200" height="700" rx="28" fill="#f8f6f1"/>
+  <rect x="48" y="48" width="1104" height="604" rx="24" fill="#fffdfb" stroke="#d7cab5" stroke-width="3"/>
+  <text x="88" y="130" fill="#1d1a16" font-family="Georgia, serif" font-size="54" font-weight="700">Docker install screenshot placeholder</text>
+  <text x="88" y="190" fill="#61584b" font-family="Arial, sans-serif" font-size="28">Replace with a real install or first-run capture</text>
+  <text x="88" y="260" fill="#1d1a16" font-family="Arial, sans-serif" font-size="30">Show:</text>
+  <text x="170" y="260" fill="#61584b" font-family="Arial, sans-serif" font-size="30">local install, localhost port, and buyer-owned runtime</text>
+  <rect x="88" y="320" width="720" height="210" rx="18" fill="#f0e7d9" stroke="#d7cab5"/>
+  <text x="120" y="390" fill="#7a6e60" font-family="Arial, sans-serif" font-size="34">Drop in the real Docker screenshot here</text>
+  <text x="120" y="440" fill="#7a6e60" font-family="Arial, sans-serif" font-size="24">This placeholder keeps README relative paths working.</text>
+</svg>

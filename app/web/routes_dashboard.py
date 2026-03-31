@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_session
 from app.models import Alert, Destination, Filing, IngestRun, StageError, WatchlistEntry
+from app.release import summarize_diagnostics
 from app.services.summarize.base import effective_summary_for_filing
 from app.web.helpers import render_template
 
@@ -434,6 +435,8 @@ def advanced(request: Request, session: Session = Depends(get_session)):
         "OPENAI_MODEL": settings.openai_model or "Not configured",
         "OPENAI_API_KEY": "Configured" if settings.openai_api_key else "Not configured",
     }
+    release_info = request.app.state.release_info
+    diagnostics = request.app.state.release_diagnostics
     return render_template(
         request,
         "advanced.html",
@@ -444,4 +447,7 @@ def advanced(request: Request, session: Session = Depends(get_session)):
         recent_run_rows=[_summarize_run(run) for run in recent_runs],
         recent_error_rows=[_summarize_error(error) for error in recent_errors],
         runtime_reference=runtime_reference,
+        release_info=release_info,
+        release_diagnostics=diagnostics,
+        release_diagnostics_summary=summarize_diagnostics(diagnostics),
     )

@@ -13,6 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import Settings, get_settings
 from app.db import configure_database, dispose_database, init_database
 from app.logging import configure_logging, request_id_var
+from app.release import build_release_diagnostics, load_release_info
 from app.services.alerts import AlertDeliveryService
 from app.services.broker import SecRequestBroker
 from app.services.ingest import EightKIngestService, Form4IngestService, RecoveryService
@@ -50,6 +51,8 @@ def create_app(
     configure_logging(resolved_settings)
     resolved_settings.ensure_runtime_paths()
     configure_database(resolved_settings.database_url)
+    release_info = load_release_info()
+    release_diagnostics = build_release_diagnostics(resolved_settings, release_info)
 
     process_lock = SingletonProcessLock(Path(resolved_settings.data_dir) / "app.lock")
     broker = overrides.get("broker") or SecRequestBroker(
@@ -214,6 +217,8 @@ def create_app(
         app.state.smtp_notifier = smtp_notifier
         app.state.alert_delivery = alert_delivery
         app.state.summary_rewriter = summary_rewriter
+        app.state.release_info = release_info
+        app.state.release_diagnostics = release_diagnostics
         app.state.sec_client = sec_client
         app.state.resolver = resolver
         app.state.ingest_service = ingest_service

@@ -99,6 +99,17 @@ a {
   padding-bottom: 3rem;
 }
 
+.site-footer {
+  width: min(1180px, calc(100% - 2rem));
+  margin: 0 auto 1.5rem;
+  padding: 0.25rem 0 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .banner,
 .flash,
 .card {
@@ -287,6 +298,18 @@ button.secondary:hover {
   background: #fffdfa;
 }
 
+.issue-pass {
+  background: #f4fbf6;
+}
+
+.issue-warn {
+  background: #fff8e9;
+}
+
+.issue-fail {
+  background: #fdf1f1;
+}
+
 .signal-card-head {
   display: flex;
   justify-content: space-between;
@@ -413,6 +436,10 @@ pre {
   .site-header {
     flex-direction: column;
     align-items: start;
+  }
+
+  .site-footer {
+    flex-direction: column;
   }
 
   .signal-card-head,

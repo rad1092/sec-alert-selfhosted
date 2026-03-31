@@ -61,6 +61,49 @@ class Settings(BaseSettings):
     watchlist_hard_cap: int = Field(default=50, alias="WATCHLIST_HARD_CAP")
     testing: bool = Field(default=False, alias="TESTING")
 
+    @field_validator(
+        "database_url",
+        "smtp_host",
+        "smtp_from",
+        "smtp_to",
+        "app_name",
+        mode="before",
+    )
+    @classmethod
+    def normalize_optional_strings(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
+    @field_validator(
+        "slack_webhook_url",
+        "alert_webhook_url",
+        "alert_webhook_secret",
+        "smtp_username",
+        "smtp_password",
+        mode="before",
+    )
+    @classmethod
+    def normalize_optional_secrets(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, SecretStr):
+            normalized = value.get_secret_value().strip()
+            return SecretStr(normalized) if normalized else None
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
+    @field_validator("session_secret", mode="before")
+    @classmethod
+    def normalize_session_secret(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or secrets.token_urlsafe(32)
+        return value
+
     @field_validator("app_host")
     @classmethod
     def normalize_app_host(cls, value: str) -> str:
@@ -95,6 +138,16 @@ class Settings(BaseSettings):
     def validate_live_overlap_rows(cls, value: int) -> int:
         if value < 5 or value > 100:
             raise ValueError("SEC_LIVE_8K_OVERLAP_ROWS must be between 5 and 100.")
+        return value
+
+    @field_validator("smtp_port", mode="before")
+    @classmethod
+    def normalize_smtp_port(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
         return value
 
     @field_validator("smtp_port")

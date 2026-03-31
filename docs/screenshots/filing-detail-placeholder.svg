@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-label="Filing detail screenshot placeholder">
+  <rect width="1200" height="700" rx="28" fill="#f5f0ea"/>
+  <rect x="48" y="48" width="1104" height="604" rx="24" fill="#fffdf9" stroke="#d8cdbd" stroke-width="3"/>
+  <text x="88" y="130" fill="#1b1916" font-family="Georgia, serif" font-size="54" font-weight="700">Filing detail screenshot placeholder</text>
+  <text x="88" y="190" fill="#60584d" font-family="Arial, sans-serif" font-size="28">Replace with a real filing detail capture</text>
+  <text x="88" y="260" fill="#1b1916" font-family="Arial, sans-serif" font-size="30">Show:</text>
+  <text x="170" y="260" fill="#60584d" font-family="Arial, sans-serif" font-size="30">headline, context, score, reasons, SEC links</text>
+  <rect x="88" y="320" width="720" height="210" rx="18" fill="#eee4d6" stroke="#d8cdbd"/>
+  <text x="120" y="390" fill="#7a6f62" font-family="Arial, sans-serif" font-size="34">Drop in the real filing detail screenshot here</text>
+  <text x="120" y="440" fill="#7a6f62" font-family="Arial, sans-serif" font-size="24">Use a filing that shows the buyer-facing trust loop clearly.</text>
+</svg>

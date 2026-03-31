@@ -5,7 +5,7 @@
   <div class="section-header">
     <div>
       <p class="eyebrow">Signal Review</p>
-      <h2>{{ filing.issuer_ticker or filing.issuer_name or "-" }} · {{ filing.form_type }}</h2>
+      <h2>{{ filing.issuer_ticker or filing.issuer_name or "-" }} • {{ filing.form_type }}</h2>
     </div>
     <form method="post" action="/filings/{{ filing.id }}/reparse" class="inline-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -120,7 +120,7 @@
         {% endif %}
       </dl>
       {% if filing.form_type not in ["4", "4/A"] and filing.normalized_payload.cleaned_body %}
-      <p class="muted payload-preview">{{ filing.normalized_payload.cleaned_body[:600] }}{% if filing.normalized_payload.cleaned_body|length > 600 %}…{% endif %}</p>
+      <p class="muted payload-preview">{{ filing.normalized_payload.cleaned_body[:600] }}{% if filing.normalized_payload.cleaned_body|length > 600 %}...{% endif %}</p>
       {% endif %}
       <pre>{{ filing.normalized_payload | tojson(indent=2) }}</pre>
       {% else %}

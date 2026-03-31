@@ -9,12 +9,55 @@
         <h2>Runtime summary</h2>
       </div>
     </div>
-    <p>OpenAI rewrite available for summary text only; score remains rule-based.</p>
+    <p>OpenAI rewrite is optional and presentation-only. Score, confidence, reasons, and SEC source links stay deterministic.</p>
     <dl class="stack compact-list">
       {% for key, value in status_sections.items() %}
       <div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>
       {% endfor %}
     </dl>
+  </article>
+
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Release</p>
+        <h2>Version and build</h2>
+      </div>
+    </div>
+    <dl class="stack compact-list">
+      <div><dt>Label</dt><dd>{{ release_info.label }}</dd></div>
+      <div><dt>Source</dt><dd>{{ release_info.build_source }}</dd></div>
+      <div><dt>Build date</dt><dd>{{ release_info.build_date }}</dd></div>
+      <div><dt>Build SHA</dt><dd>{{ release_info.build_sha or "Not set" }}</dd></div>
+      <div><dt>OpenAI rewrite active</dt><dd>{{ "yes" if openai_rewrite_active else "no" }}</dd></div>
+    </dl>
+  </article>
+</section>
+
+<section class="grid two-up">
+  <article class="card">
+    <div class="section-header">
+      <div>
+        <p class="eyebrow">Support Diagnostics</p>
+        <h2>Doctor summary</h2>
+      </div>
+    </div>
+    <p>
+      {{ diagnostics_summary.pass }} pass •
+      {{ diagnostics_summary.warn }} warn •
+      {{ diagnostics_summary.fail }} fail
+    </p>
+    <div class="stack issue-stack">
+      {% for check in diagnostics %}
+      <article class="issue-item issue-{{ check.status }}">
+        <strong>{{ check.title }}</strong>
+        <p>{{ check.message }}</p>
+        {% if check.detail %}
+        <p class="muted">{{ check.detail }}</p>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
   </article>
 
   <article class="card">
@@ -31,7 +74,6 @@
       <div><dt>Recent 429</dt><dd>{{ broker_snapshot.recent_429_count }}</dd></div>
       <div><dt>Scheduler enabled</dt><dd>{{ scheduler_snapshot.enabled }}</dd></div>
       <div><dt>Scheduler started</dt><dd>{{ scheduler_snapshot.started }}</dd></div>
-      <div><dt>OpenAI rewrite active</dt><dd>{{ "yes" if openai_rewrite_active else "no" }}</dd></div>
       {% for job in scheduler_snapshot.jobs %}
       <div><dt>{{ job.id }}</dt><dd>{{ job.next_run_time or "Not scheduled" }}</dd></div>
       {% endfor %}

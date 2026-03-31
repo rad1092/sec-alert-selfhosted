@@ -51,10 +51,16 @@ def _current_section(path: str) -> str:
 
 
 def template_defaults(request: Request, **context: Any) -> dict[str, Any]:
+    release_info = getattr(request.app.state, "release_info", None)
     return {
         "csrf_token": ensure_csrf_token(request),
         "flash_messages": pop_flashes(request),
         "current_path": request.url.path,
         "current_section": _current_section(request.url.path),
+        "release_info": release_info,
+        "release_label": getattr(release_info, "label", "Unreleased"),
+        "release_version": getattr(release_info, "version", "0.1.0"),
+        "release_build_date": getattr(release_info, "build_date", "local"),
+        "release_build_sha": getattr(release_info, "build_sha", None),
         **context,
     }

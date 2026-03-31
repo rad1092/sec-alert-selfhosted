@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
+from app.release import summarize_diagnostics
 from app.web.helpers import render_template
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -10,6 +11,8 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 @router.get("")
 def settings_page(request: Request):
     settings = request.app.state.settings
+    diagnostics = request.app.state.release_diagnostics
+    diagnostics_summary = summarize_diagnostics(diagnostics)
     sanitized = {
         "APP_HOST": settings.app_host,
         "APP_ALLOW_CONTAINER_BIND": settings.app_allow_container_bind,
@@ -38,13 +41,14 @@ def settings_page(request: Request):
     }
     status_sections = {
         "App mode": "Automatic polling" if settings.scheduler_enabled else "Manual-only",
+        "Release": request.app.state.release_info.label,
         "OpenAI rewrite active": "yes" if request.app.state.summary_rewriter.is_active() else "no",
         "OPENAI_API_KEY": "Configured" if settings.openai_api_key else "Not configured",
         "OPENAI_MODEL": settings.openai_model or "Not configured",
         "Slack notifications": "Configured" if settings.slack_webhook_url else "Not configured",
         "Webhook notifications": "Configured" if settings.alert_webhook_url else "Not configured",
         "SMTP email": (
-            "Configured"
+            "Configured (comma-separated recipients supported)"
             if settings.smtp_to and settings.smtp_from and settings.smtp_host
             else "Not configured"
         ),
@@ -58,4 +62,7 @@ def settings_page(request: Request):
         openai_rewrite_active=request.app.state.summary_rewriter.is_active(),
         broker_snapshot=request.app.state.broker.snapshot(),
         scheduler_snapshot=request.app.state.scheduler.snapshot(),
+        release_info=request.app.state.release_info,
+        diagnostics=diagnostics,
+        diagnostics_summary=diagnostics_summary,
     )

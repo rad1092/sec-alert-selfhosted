@@ -19,7 +19,7 @@
       <div class="section-header">
         <div>
           <h3>{{ error.title }}</h3>
-          <p class="muted">{{ error.source_label }} · {{ error.created_at_display }}</p>
+          <p class="muted">{{ error.source_label }} • {{ error.created_at_display }}</p>
         </div>
         <span class="pill pill-{% if error.retryable %}neutral{% else %}subtle{% endif %}">
           {{ "Retryable" if error.retryable else "Needs review" }}

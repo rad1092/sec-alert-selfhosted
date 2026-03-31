@@ -163,6 +163,7 @@ def test_navigation_restructures_to_inbox_notifications_and_advanced(client):
     assert advanced_response.status_code == 200
     assert "Queue health" in advanced_response.text
     assert "Raw ingest runs" in advanced_response.text
+    assert "Doctor summary" in advanced_response.text
 
     errors_response = client.get("/errors")
     assert errors_response.status_code == 200
@@ -171,3 +172,4 @@ def test_navigation_restructures_to_inbox_notifications_and_advanced(client):
     settings_response = client.get("/settings")
     assert settings_response.status_code == 200
     assert "Technical Reference" in settings_response.text
+    assert "Doctor summary" in settings_response.text

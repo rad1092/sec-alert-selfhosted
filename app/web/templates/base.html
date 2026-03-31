@@ -46,5 +46,15 @@
 
       {% block content %}{% endblock %}
     </main>
+
+    <footer class="site-footer">
+      <div>
+        <strong>{{ release_label }}</strong>
+        <span class="muted">Build date: {{ release_build_date }}</span>
+      </div>
+      {% if release_build_sha %}
+      <span class="muted">Build SHA: {{ release_build_sha }}</span>
+      {% endif %}
+    </footer>
   </body>
 </html>

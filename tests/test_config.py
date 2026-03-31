@@ -87,6 +87,29 @@ def test_settings_treat_blank_openai_values_as_unconfigured(tmp_path: Path):
     assert settings.openai_model is None
 
 
+def test_settings_treat_blank_database_url_and_smtp_port_as_unconfigured(tmp_path: Path):
+    settings = Settings(
+        APP_HOST="127.0.0.1",
+        DATA_DIR=tmp_path,
+        DATABASE_URL="   ",
+        SEC_USER_AGENT="SEC Alert Test test@example.com",
+        SMTP_PORT="   ",
+    )
+    assert settings.database_url == f"sqlite:///{(tmp_path / 'sec_alert.db').resolve().as_posix()}"
+    assert settings.smtp_port is None
+
+
+def test_settings_generate_session_secret_when_blank(tmp_path: Path):
+    settings = Settings(
+        APP_HOST="127.0.0.1",
+        DATA_DIR=tmp_path,
+        DATABASE_URL=f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
+        SEC_USER_AGENT="SEC Alert Test test@example.com",
+        SESSION_SECRET="   ",
+    )
+    assert settings.session_secret
+
+
 def test_settings_ensure_runtime_paths(tmp_path: Path):
     settings = Settings(
         APP_HOST="127.0.0.1",
