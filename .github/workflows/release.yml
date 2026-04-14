@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version tag (e.g. v0.2.0)"
+        required: true
+        default: "v0.2.0"
+      draft:
+        description: "Create as draft release"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: ">=0.5.0"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --python 3.12
+
+      - name: Run tests
+        run: uv run --python 3.12 pytest
+
+      - name: Run lint
+        run: uv run --python 3.12 ruff check .
+
+      - name: Run doctor
+        run: uv run --python 3.12 python -m app.cli.release doctor
+        env:
+          SEC_USER_AGENT: "release-ci release@ci"
+
+      - name: Run smoke
+        run: uv run --python 3.12 python -m app.cli.release smoke
+        env:
+          SEC_USER_AGENT: "release-ci release@ci"
+
+      - name: Set build metadata
+        run: echo "BUILD_DATE=$(date -u +'%Y-%m-%d')" >> "$GITHUB_ENV"
+
+      - name: Build release bundle
+        run: uv run --python 3.12 python -m app.cli.release release-bundle --version "${{ inputs.version }}"
+        env:
+          SEC_USER_AGENT: "release-ci release@ci"
+          APP_BUILD_DATE: ${{ env.BUILD_DATE }}
+          APP_BUILD_SHA: ${{ github.sha }}
+          APP_BUILD_SOURCE: release
+
+      - name: Verify artifacts
+        run: |
+          ls -la dist/releases/
+          cat dist/releases/sec-alert-self-hosted-${{ inputs.version }}.sha256
+          cat dist/releases/sec-alert-self-hosted-${{ inputs.version }}.manifest.json
+          test -f CHANGELOG.md || { echo "CHANGELOG.md not found"; exit 1; }
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: ${{ inputs.version }}
+          body_path: CHANGELOG.md
+          draft: ${{ inputs.draft == 'true' }}
+          files: |
+            dist/releases/sec-alert-self-hosted-${{ inputs.version }}.zip
+            dist/releases/sec-alert-self-hosted-${{ inputs.version }}.sha256
+            dist/releases/sec-alert-self-hosted-${{ inputs.version }}.manifest.json
