@@ -53,11 +53,14 @@ jobs:
         env:
           SEC_USER_AGENT: "release-ci release@ci"
 
+      - name: Set build metadata
+        run: echo "BUILD_DATE=$(date -u +'%Y-%m-%d')" >> "$GITHUB_ENV"
+
       - name: Build release bundle
         run: uv run --python 3.12 python -m app.cli.release release-bundle --version "${{ inputs.version }}"
         env:
           SEC_USER_AGENT: "release-ci release@ci"
-          APP_BUILD_DATE: ${{ github.event.created_at }}
+          APP_BUILD_DATE: ${{ env.BUILD_DATE }}
           APP_BUILD_SHA: ${{ github.sha }}
           APP_BUILD_SOURCE: release
 
@@ -66,6 +69,7 @@ jobs:
           ls -la dist/releases/
           cat dist/releases/sec-alert-self-hosted-${{ inputs.version }}.sha256
           cat dist/releases/sec-alert-self-hosted-${{ inputs.version }}.manifest.json
+          test -f CHANGELOG.md || { echo "CHANGELOG.md not found"; exit 1; }
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
