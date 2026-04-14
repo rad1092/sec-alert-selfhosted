@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+No unreleased changes.
+
+## 0.2.0 — 2026-04-14
+
+First self-hosted paid release.
+
 - Added buyer-facing release docs, including quickstart, Docker install, upgrade, backup/restore, troubleshooting, metadata guidance, PostgreSQL future-work notes, and a capacity benchmark plan.
 - Added release/support boundary docs: commercial license placeholder, support, security, privacy, and disclaimer.
 - Added release tooling via `make doctor`, `make smoke`, `make backup`, `make restore`, and `make release-bundle`.
