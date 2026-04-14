@@ -10,11 +10,11 @@ on:
       draft:
         description: "Create as draft release"
         required: false
-        default: "true"
+        default: "false"
         type: choice
         options:
-          - "true"
           - "false"
+          - "true"
 
 permissions:
   contents: write
